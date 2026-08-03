@@ -1,0 +1,78 @@
+plugins {
+    id "com.android.application"
+}
+
+def signingProperties = new Properties()
+def signingPropertiesPath = System.getenv("BALATRO_SIGNING_PROPERTIES")
+if (signingPropertiesPath != null && file(signingPropertiesPath).exists()) {
+    file(signingPropertiesPath).withInputStream { signingProperties.load(it) }
+}
+
+android {
+    namespace "cl.mauricio.balatromods"
+    compileSdk 37
+
+    defaultConfig {
+        applicationId "cl.mauricio.balatromods"
+        minSdk 26
+        targetSdk 37
+        versionCode 20
+        versionName "2.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        if (!signingProperties.isEmpty()) {
+            balatroRelease {
+                storeFile file(signingProperties.getProperty("storeFile"))
+                storePassword signingProperties.getProperty("storePassword")
+                keyAlias signingProperties.getProperty("keyAlias")
+                keyPassword signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            buildConfigField "String", "BMM_CHANNEL", "\"beta\""
+        }
+        release {
+            minifyEnabled false
+            buildConfigField "String", "BMM_CHANNEL", "\"production\""
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            if (!signingProperties.isEmpty()) {
+                signingConfig signingConfigs.balatroRelease
+            }
+        }
+        beta {
+            initWith release
+            applicationIdSuffix ".beta"
+            versionNameSuffix "-beta"
+            buildConfigField "String", "BMM_CHANNEL", "\"beta\""
+            matchingFallbacks = ["release"]
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation "androidx.core:core:1.16.0"
+    implementation "androidx.documentfile:documentfile:1.1.0"
+    implementation "androidx.webkit:webkit:1.16.0"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20260719"
+}

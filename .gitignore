@@ -1,0 +1,47 @@
+# Local and generated build output
+.gradle/
+app/build/
+build/
+build-web-public-vnext/
+web-staging*/
+final-artifacts*/
+qa/
+
+# JavaScript dependencies and local Vite output
+ui/node_modules/
+ui/dist/
+
+# Helper build output and release bundles
+helper/bin/
+helper/obj/
+helper/publish*/
+helper/helper-release*/
+helper/native-maker/
+helper/*.zip
+helper/*.log
+helper/*.json
+
+# Local test artifacts and screenshots
+*.apk
+*.aab
+*.zip
+# Local QA screenshots are ignored by their explicit qa-* names. App artwork is
+# kept in source control so the wallpaper picker works in a clean checkout.
+qa-*.png
+*.log
+
+# Local signing and environment files
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+signing.properties
+
+# Internal planning notes kept outside the public release
+/GOAL.md
+/design/
+docs/BRAINSTORMING-Y-ARQUITECTURA.md
+docs/GOAL-PUBLIC-VNEXT.md
+docs/RESEARCH-SOURCES.md

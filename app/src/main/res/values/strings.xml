@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MBM - Mobile Balatro Manager</string>
+    <string name="webview_error">MBM - Mobile Balatro Manager could not load its interface. Restart the app or reinstall this APK.</string>
+</resources>
