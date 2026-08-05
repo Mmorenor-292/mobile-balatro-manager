@@ -55,6 +55,13 @@ const mockState = {
       name: "Handy",
       author: "SleepyG11",
       version: "1.5.2",
+      installedVersion: "1.5.2",
+      latestVersion: "1.6.0",
+      updateAvailable: true,
+      versions: [
+        { version: "1.6.0", downloadUrl: "https://example.invalid/handy-1.6.0.zip" },
+        { version: "1.5.2", downloadUrl: "https://example.invalid/handy-1.5.2.zip" },
+      ],
       summary: "A collection of useful gameplay shortcuts and controls.",
       categories: ["Quality of Life"],
       downloads: 68220,
@@ -206,7 +213,7 @@ export function invoke(method, payload = {}) {
     emitMock({ saveTargetFolder: "Connected target folder", message: "Save target connected" });
   } else if (method === "restoreInstall") {
     emitMock({ message: "Mod restored from quarantine" });
-  } else if (["pairDesktop", "selectSteamGame", "detectNative", "selectNativeApk", "buildSteam", "buildNative", "shareArtifact", "installArtifact", "previewSave", "importSave", "importDesktopSave", "exportSave", "exportHistory", "viewInstall", "chooseCatalogVersion", "updateCatalogMod", "resetSettings", "setHistoryRetention", "deleteHistoryEntry"].includes(method)) {
+  } else if (["pairDesktop", "selectSteamGame", "detectNative", "selectNativeApk", "buildSteam", "buildNative", "shareArtifact", "installArtifact", "previewSave", "importSave", "importDesktopSave", "exportSave", "exportHistory", "viewInstall", "chooseCatalogVersion", "resetSettings", "setHistoryRetention", "deleteHistoryEntry"].includes(method)) {
     const messages = {
       pairDesktop: "Desktop paired on local network",
       selectSteamGame: "Game file selected",
@@ -233,15 +240,20 @@ export function invoke(method, payload = {}) {
     emitMock({ message: "Snapshot restored" });
   } else if (method === "loadCatalog") {
     emitMock({ message: "Catalog updated" });
-  } else if (method === "installCatalogMod") {
+  } else if (method === "installCatalogMod" || method === "updateCatalogMod") {
     const catalog = state.catalog.map((item) =>
       item.id === payload.id && item.source === payload.source
-        ? { ...item, installed: true }
+        ? {
+            ...item,
+            installed: true,
+            installedVersion: payload.version || item.latestVersion || item.version,
+            updateAvailable: false,
+          }
         : item,
     );
     emitMock({
       catalog,
-      message: "Mod installed in quarantine. Review it in Library, then enable it.",
+      message: method === "updateCatalogMod" ? "Mod updated in quarantine. Review it in Library, then enable it." : "Mod installed in quarantine. Review it in Library, then enable it.",
     });
   }
 }

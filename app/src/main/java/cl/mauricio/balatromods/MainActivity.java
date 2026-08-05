@@ -1937,7 +1937,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void attachCatalogMetadata(String historyId, CatalogItem item) {
+    private void attachCatalogMetadata(String historyId, CatalogItem item, String selectedVersion, String artifactUrl) {
         if (item == null || historyId == null || historyId.isBlank()) return;
         try {
             JSONArray existing = installHistoryJson();
@@ -1949,9 +1949,10 @@ public final class MainActivity extends Activity {
                 entry.put("catalogName", item.name());
                 entry.put("catalogFolder", item.folderName());
                 entry.put("catalogHomepage", item.homepage());
-                entry.put("catalogDownloadUrl", item.downloadUrl());
+                entry.put("catalogDownloadUrl", artifactUrl == null || artifactUrl.isBlank() ? item.downloadUrl() : artifactUrl);
+                entry.put("catalogVersion", selectedVersion == null ? item.version() : selectedVersion);
                 entry.put("profile", "Mods folder");
-                entry.put("artifact", item.downloadUrl());
+                entry.put("artifact", artifactUrl == null || artifactUrl.isBlank() ? item.downloadUrl() : artifactUrl);
                 preferences.edit().putString(PREF_INSTALL_HISTORY, existing.toString()).apply();
                 return;
             }
@@ -1974,7 +1975,13 @@ public final class MainActivity extends Activity {
             pushState();
             return;
         }
-        installCatalogItem(catalogId, catalogSource, false);
+        installCatalogItem(
+                catalogId,
+                catalogSource,
+                false,
+                record.optString("catalogVersion", ""),
+                record.optString("catalogDownloadUrl", "")
+        );
     }
 
     private JSONObject findInstallHistory(String id) {
@@ -2193,7 +2200,7 @@ public final class MainActivity extends Activity {
             } catch (Exception error) {
                 nextMessage = catalog.isEmpty()
                         ? "Catalog unavailable: " + readable(error)
-                        : "Offline catalog loaded";
+                        : "Could not refresh catalog. Showing the last catalog copy.";
             }
             final String finalMessage = nextMessage;
             main.post(() -> {
@@ -2205,14 +2212,26 @@ public final class MainActivity extends Activity {
     }
 
     private void installCatalogItem(String id, String source) {
-        installCatalogItem(id, source, false);
+        installCatalogItem(id, source, false, "", "");
     }
 
     private void updateCatalogItem(String id, String source) {
-        installCatalogItem(id, source, true);
+        installCatalogItem(id, source, true, "", "");
     }
 
     private void installCatalogItem(String id, String source, boolean replaceExisting) {
+        installCatalogItem(id, source, replaceExisting, "", "");
+    }
+
+    private void installCatalogItem(String id, String source, String version, String downloadUrl) {
+        installCatalogItem(id, source, false, version, downloadUrl);
+    }
+
+    private void updateCatalogItem(String id, String source, String version, String downloadUrl) {
+        installCatalogItem(id, source, true, version, downloadUrl);
+    }
+
+    private void installCatalogItem(String id, String source, boolean replaceExisting, String requestedVersion, String requestedDownloadUrl) {
         runFileOperation(() -> {
             requireScan();
             CatalogItem item = findCatalogItem(id, source);
@@ -2237,7 +2256,10 @@ public final class MainActivity extends Activity {
                 }
                 oldQuarantine = ModRepository.quarantine(existing);
             }
-            String url = catalogClient.resolveDownloadUrl(item);
+            String selectedVersion = requestedVersion == null || requestedVersion.isBlank()
+                    ? item.version()
+                    : requestedVersion;
+            String url = catalogClient.resolveDownloadUrl(item, selectedVersion, requestedDownloadUrl);
             CatalogInstaller.InstallResult result;
             try {
                 result = CatalogInstaller.install(this, scan.folder(), item, url);
@@ -2252,12 +2274,12 @@ public final class MainActivity extends Activity {
             recordInstallHistory(
                     historyId,
                     item.name() + (replaceExisting ? " updated" : " installed"),
-                    item.version(),
+                    selectedVersion,
                     replaceExisting ? "update" : "install",
                     oldQuarantine,
                     result.folderName()
             );
-            attachCatalogMetadata(historyId, item);
+            attachCatalogMetadata(historyId, item, selectedVersion, url);
             String warning = result.warnings().isEmpty()
                     ? ""
                     : " " + String.join(" ", result.warnings());
@@ -2426,12 +2448,6 @@ public final class MainActivity extends Activity {
     }
 
     private void runFileOperation(CheckedOperation operation) {
-        if (loading) {
-            return;
-        }
-        loading = true;
-        message = "";
-        pushState();
         io.execute(() -> {
             String resultMessage;
             try {
@@ -2444,7 +2460,6 @@ public final class MainActivity extends Activity {
             }
             final String finalMessage = resultMessage;
             main.post(() -> {
-                loading = false;
                 message = finalMessage;
                 pushState();
             });
@@ -2503,13 +2518,9 @@ public final class MainActivity extends Activity {
             int active = 0;
             int hidden = 0;
             int problems = 0;
-            Set<String> installedIds = new HashSet<>();
             if (scan != null) {
                 for (ModEntry mod : scan.mods()) {
                     mods.put(mod.toJson());
-                    installedIds.add(ModRepository.normalizeId(mod.id));
-                    installedIds.add(ModRepository.normalizeId(mod.name));
-                    installedIds.add(ModRepository.normalizeId(mod.folderName));
                     if (mod.hidden) hidden++;
                     else active++;
                     if ("error".equals(mod.severity) || "warning".equals(mod.severity)) {
@@ -2538,10 +2549,8 @@ public final class MainActivity extends Activity {
 
             JSONArray available = new JSONArray();
             for (CatalogItem item : catalog) {
-                boolean installed = installedIds.contains(ModRepository.normalizeId(item.id()))
-                        || installedIds.contains(ModRepository.normalizeId(item.name()))
-                        || installedIds.contains(ModRepository.normalizeId(item.folderName()));
-                available.put(item.toJson(installed));
+                ModEntry installedMod = findInstalledCatalogMod(item);
+                available.put(item.toJson(installedMod != null, installedMod == null ? "" : installedMod.version));
             }
             state.put("catalog", available);
             state.put("catalogSources", new JSONArray(List.of(
@@ -2619,6 +2628,24 @@ public final class MainActivity extends Activity {
         throw new IllegalArgumentException("Catalog item is no longer available.");
     }
 
+    private ModEntry findInstalledCatalogMod(CatalogItem item) {
+        if (scan == null || item == null) return null;
+        String itemId = ModRepository.normalizeId(item.id());
+        String itemName = ModRepository.normalizeId(item.name());
+        String itemFolder = ModRepository.normalizeId(item.folderName());
+        for (ModEntry mod : scan.mods()) {
+            String modId = ModRepository.normalizeId(mod.id);
+            String modName = ModRepository.normalizeId(mod.name);
+            String modFolder = ModRepository.normalizeId(mod.folderName);
+            if (itemId.equals(modId) || itemId.equals(modName) || itemId.equals(modFolder)
+                    || itemName.equals(modId) || itemName.equals(modName) || itemName.equals(modFolder)
+                    || itemFolder.equals(modId) || itemFolder.equals(modName) || itemFolder.equals(modFolder)) {
+                return mod;
+            }
+        }
+        return null;
+    }
+
     private void requireScan() {
         if (scan == null || selectedTreeUri == null) {
             throw new IllegalStateException("Connect the Mods folder first.");
@@ -2682,11 +2709,15 @@ public final class MainActivity extends Activity {
                 case "loadCatalog" -> loadCatalog();
                 case "installCatalogMod" -> installCatalogItem(
                         string(payload, "id"),
-                        string(payload, "source")
+                        string(payload, "source"),
+                        string(payload, "version"),
+                        string(payload, "downloadUrl")
                 );
                 case "updateCatalogMod" -> updateCatalogItem(
                         string(payload, "id"),
-                        string(payload, "source")
+                        string(payload, "source"),
+                        string(payload, "version"),
+                        string(payload, "downloadUrl")
                 );
                 case "importMod" -> importMod();
                 case "importModFolder" -> importModFolder();

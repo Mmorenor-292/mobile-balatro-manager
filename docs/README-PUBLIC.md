@@ -1,6 +1,6 @@
 # MBM - Mobile Balatro Manager
 
-MBM - Mobile Balatro Manager is an independent, local-first companion for managing a user's Balatro mods and recovery files on Android. It does not include Balatro, commercial game files, credentials or signing keys.
+MBM - Mobile Balatro Manager is an independent Android companion for managing a user's Balatro mods, catalog releases, and recovery files. It does not include Balatro, commercial game files, credentials or signing keys.
 
 ## Start here
 

@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-08-02
 
-MBM - Mobile Balatro Manager is a local-first companion for user-owned Balatro files. It does not include Balatro, commercial game files, saves, Steam credentials, Google credentials, or signing keys.
+MBM - Mobile Balatro Manager is a privacy-conscious companion for user-owned Balatro files. It does not include Balatro, commercial game files, saves, Steam credentials, Google credentials, or signing keys.
 
 ## What stays local
 

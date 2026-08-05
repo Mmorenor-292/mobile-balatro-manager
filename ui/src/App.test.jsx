@@ -62,6 +62,22 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     expect(screen.getByRole("button", { name: "Source only" })).toBeDisabled();
   });
 
+  it("shows installed and latest versions and lets the user choose a release", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Discover" }));
+    expect(screen.getAllByText("Installed:").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Latest:").length).toBeGreaterThan(0);
+    const versionPicker = screen.getByRole("combobox", { name: "Version for Handy" });
+    expect(versionPicker).toHaveValue("1.6.0");
+    await user.selectOptions(versionPicker, "1.5.2");
+    expect(versionPicker).toHaveValue("1.5.2");
+    const update = screen.getByRole("button", { name: "Update" });
+    expect(update).not.toBeDisabled();
+    await user.click(update);
+    expect(await screen.findByRole("status")).toHaveTextContent(/updated in quarantine/i);
+  });
+
   it("uses the four explicit save choices", async () => {
     const user = userEvent.setup();
     render(<App />);

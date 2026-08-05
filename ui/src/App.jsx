@@ -252,6 +252,7 @@ function DiscoverScreen({ state }) {
   const [sort, setSort] = useState("popular");
   const [category, setCategory] = useState("All");
   const [source, setSource] = useState("All");
+  useEffect(() => { invoke("loadCatalog"); }, []);
   const categories = ["All", "Quality of Life", "Content", "Technical", "Visual", "Community"];
   const sources = ["All", "BMI", "Thunderstore", "Awesome Balatro"];
   const results = useMemo(() => {
@@ -266,9 +267,33 @@ function DiscoverScreen({ state }) {
 }
 function CatalogCard({ item, connected }) {
   const image = item.thumbnailUrl || item.thumbnail || "";
-  const installable = Boolean(item.downloadUrl || item.downloadURL);
+  const releases = Array.isArray(item.versions) && item.versions.length
+    ? item.versions
+    : [{ version: item.latestVersion || item.version || "latest", downloadUrl: item.downloadUrl || item.downloadURL || "" }];
+  const defaultVersion = item.latestVersion || item.version || releases[0].version;
+  const [selectedVersionOverride, setSelectedVersionOverride] = useState("");
+  const selectedVersion = releases.some((release) => release.version === selectedVersionOverride)
+    ? selectedVersionOverride
+    : defaultVersion;
+  const installable = item.source === "BMI" || releases.some((release) => Boolean(release.downloadUrl || release.downloadURL)) || Boolean(item.downloadUrl || item.downloadURL);
   const sourceOnly = item.source === "Awesome Balatro" && !installable;
-  return <article className="catalog-card">{image ? <img className="catalog-thumb" src={image} alt="" loading="lazy" /> : <div className="catalog-thumb puzzle-thumb"><Puzzle /></div>}<div className="catalog-topline"><span className="source-badge">{item.source === "BMI" ? "Mod Index" : item.source}</span><span>{item.source === "Awesome Balatro" ? `${item.downloads?.toLocaleString("en-US") || 0} stars` : `${item.downloads?.toLocaleString("en-US") || 0} downloads`}</span></div><h3>{item.name}</h3><p className="catalog-author">{item.author} · {item.version}</p><p className="catalog-summary">{item.summary || "No description provided."}</p><div className="catalog-meta"><span>{item.categories?.[0] || "Community"}</span>{item.requiresSteamodded && <span>Requires Steamodded</span>}</div><div className="catalog-actions"><button className={item.installed ? "installed-button" : "install-button"} type="button" disabled={!connected || !installable} title={sourceOnly ? "This entry has no verified release archive yet." : undefined} onClick={() => invoke(item.installed ? "updateCatalogMod" : "installCatalogMod", { id: item.id, source: item.source })}>{sourceOnly ? "Source only" : item.installed ? "Update" : "Install"}</button>{item.homepage && <button className="icon-button mini" type="button" aria-label={`Open source for ${item.name}`} onClick={() => invoke("openModWebsite", { url: item.homepage })}><ChevronRight /></button>}</div></article>;
+  const currentVersion = item.installedVersion || "not installed";
+  const latestVersion = item.latestVersion || item.version || "unknown";
+  const updateAvailable = Boolean(item.installed && (item.updateAvailable || (currentVersion !== "not installed" && currentVersion !== latestVersion)));
+  const action = item.installed ? (updateAvailable ? "updateCatalogMod" : "updateCatalogMod") : "installCatalogMod";
+  const label = sourceOnly ? "Source only" : item.installed ? (updateAvailable ? "Update" : "Reinstall") : "Install";
+  const runInstall = () => invoke(action, { id: item.id, source: item.source, version: selectedVersion, downloadUrl: releases.find((release) => release.version === selectedVersion)?.downloadUrl || item.downloadUrl || item.downloadURL || "" });
+  return <article className="catalog-card">
+    {image ? <img className="catalog-thumb" src={image} alt={`${item.name} icon`} loading="lazy" /> : <div className="catalog-thumb puzzle-thumb"><Puzzle /></div>}
+    <div className="catalog-topline"><span className="source-badge">{item.source === "BMI" ? "Mod Index" : item.source}</span><span>{item.source === "Awesome Balatro" ? `${item.downloads?.toLocaleString("en-US") || 0} stars` : `${item.downloads?.toLocaleString("en-US") || 0} downloads`}</span></div>
+    <h3>{item.name}</h3>
+    <p className="catalog-author">{item.author}</p>
+    <div className="catalog-version-row"><span>Installed: <strong>{currentVersion}</strong></span><span>Latest: <strong>{latestVersion}</strong></span></div>
+    <p className="catalog-summary">{item.summary || "No description provided."}</p>
+    <div className="catalog-meta"><span>{item.categories?.[0] || "Community"}</span>{item.requiresSteamodded && <span>Requires Steamodded</span>}{updateAvailable && <span className="catalog-update-available">Update available</span>}</div>
+    {releases.length > 1 && <label className="catalog-version-picker">Version<select aria-label={`Version for ${item.name}`} value={selectedVersion} onChange={(event) => setSelectedVersionOverride(event.target.value)}>{releases.map((release) => <option key={release.version} value={release.version}>{release.version}</option>)}</select></label>}
+    <div className="catalog-actions"><button className={item.installed ? "installed-button" : "install-button"} type="button" disabled={!installable} title={sourceOnly ? "This entry has no verified release archive yet." : !connected ? "Connect your Mods folder before installing." : undefined} onClick={runInstall}>{label}</button>{item.homepage && <button className="icon-button mini" type="button" aria-label={`Open source for ${item.name}`} onClick={() => invoke("openModWebsite", { url: item.homepage })}><ChevronRight /></button>}</div>
+  </article>;
 }
 
 function SavesScreen({ state }) {
@@ -316,7 +341,7 @@ function SettingsScreen({ wallpaper, setWallpaper, advancedMode, setAdvancedMode
     <h3 className="section-label">Background</h3>
     <p className="lead">Choose a clean wallpaper. The center is intentionally quiet so buttons stay readable.</p>
     <div className="wallpaper-grid">{wallpaperOptions.map((item) => <button key={item.id} type="button" className={`wallpaper-option ${item.tone} ${wallpaper === item.id ? "selected" : ""}`} onClick={() => setWallpaper(item.id)} style={item.image ? { backgroundImage: `url(${item.image})` } : undefined}><span>{item.label}</span>{wallpaper === item.id && <Check />}</button>)}</div>
-    <div className="settings-card"><ShieldCheck /><div><strong>Privacy mode</strong><small>Offline by default. Catalog downloads are opt-in and limited to trusted HTTPS hosts.</small></div><Check /></div>
+    <div className="settings-card"><ShieldCheck /><div><strong>Connected catalog</strong><small>Browse trusted indexes and refresh release metadata whenever you want the latest versions.</small></div><Check /></div>
     <label className="settings-card settings-toggle"><input type="checkbox" checked={advancedMode} onChange={(event) => setAdvancedMode(event.target.checked)} /><Settings2 /><div><strong>Advanced mode</strong><small>Show technical compatibility details and recovery context when available.</small></div></label>
     <label className="settings-card settings-toggle"><input type="checkbox" checked={crashReports} onChange={(event) => setCrashReports(event.target.checked)} /><CircleAlert /><div><strong>Local crash reports (opt-in)</strong><small>Off by default. Reports stay on this device and are exported only when you press an export button.</small></div></label>
     <label className="field-label settings-retention">History retention<select aria-label="History retention" value={historyRetention} onChange={(event) => onRetentionChange(event.target.value)}><option value="10">Keep 10 records</option><option value="20">Keep 20 records</option><option value="50">Keep 50 records</option><option value="100">Keep 100 records</option><option value="0">Keep all records</option></select></label>
@@ -324,9 +349,9 @@ function SettingsScreen({ wallpaper, setWallpaper, advancedMode, setAdvancedMode
     <button className="secondary-button" type="button" onClick={() => invoke("resetSettings")}>Reset app preferences</button>
   </section>;
 }
-function HelpScreen({ onNavigate }) { return <section className="screen help-screen"><div className="screen-heading"><div><p className="eyebrow">SUPPORT</p><h2>Help</h2></div><LifeBuoy /></div><div className="help-card"><h3>Something broke?</h3><p>Use Backup History to restore the last good setup. If the game still fails, hide the last installed mod and export a report.</p><button className="secondary-button" type="button" onClick={() => invoke("exportReport")}>Export troubleshooting report</button></div><div className="help-card"><h3>Native copy not supported?</h3><p>This copy cannot be patched safely. Use the Steam/local route instead. MBM will never bypass DRM or signatures.</p></div><div className="help-card"><h3>About MBM</h3><p>Mobile Balatro Manager is an independent local-first tool. Mods are never executed by the manager during inspection.</p><button className="secondary-button" type="button" onClick={() => onNavigate("about")}>About & licenses</button></div></section>; }
+function HelpScreen({ onNavigate }) { return <section className="screen help-screen"><div className="screen-heading"><div><p className="eyebrow">SUPPORT</p><h2>Help</h2></div><LifeBuoy /></div><div className="help-card"><h3>Something broke?</h3><p>Use Backup History to restore the last good setup. If the game still fails, hide the last installed mod and export a report.</p><button className="secondary-button" type="button" onClick={() => invoke("exportReport")}>Export troubleshooting report</button></div><div className="help-card"><h3>Native copy not supported?</h3><p>This copy cannot be patched safely. Use the Steam/local route instead. MBM will never bypass DRM or signatures.</p></div><div className="help-card"><h3>About MBM</h3><p>Mobile Balatro Manager is an independent companion for user-owned Balatro mod folders. Mods are never executed by the manager during inspection.</p><button className="secondary-button" type="button" onClick={() => onNavigate("about")}>About & licenses</button></div></section>; }
 
-function AboutScreen({ state }) { const channel = state.channel === "production" ? "production" : "beta"; return <section className="screen help-screen"><div className="screen-heading"><div><p className="eyebrow">TRANSPARENCY</p><h2>About & licenses</h2></div><Info /></div><div className="help-card"><h3>MBM - Mobile Balatro Manager</h3><p>Version {state.version || "2.0.0"} · {channel} channel</p><p>Independent, local-first companion for user-owned Balatro mod folders. It does not include Balatro, commercial game files, saves, credentials, or signing keys.</p></div><div className="help-card"><h3>Open-source components</h3><p>Android WebView, React, Lucide icons, AndroidX DocumentFile, and the optional Balatro Mobile Maker are attributed in the public release folder. Third-party tools keep their original licenses.</p></div><div className="help-card"><h3>Privacy promise</h3><p>Pairing is LAN-only and consent-based. Catalog requests are initiated by you. No game files, saves, Steam credentials, or Google credentials are uploaded to a cloud service.</p></div></section>; }
+function AboutScreen({ state }) { const channel = state.channel === "production" ? "production" : "beta"; return <section className="screen help-screen"><div className="screen-heading"><div><p className="eyebrow">TRANSPARENCY</p><h2>About & licenses</h2></div><Info /></div><div className="help-card"><h3>MBM - Mobile Balatro Manager</h3><p>Version {state.version || "2.0.0"} · {channel} channel</p><p>Independent companion for user-owned Balatro mod folders. It does not include Balatro, commercial game files, saves, credentials, or signing keys.</p></div><div className="help-card"><h3>Open-source components</h3><p>Android WebView, React, Lucide icons, AndroidX DocumentFile, and the optional Balatro Mobile Maker are attributed in the public release folder. Third-party tools keep their original licenses.</p></div><div className="help-card"><h3>Privacy promise</h3><p>Pairing is LAN-only and consent-based. Catalog requests are initiated by you. No game files, saves, Steam credentials, or Google credentials are uploaded to a cloud service.</p></div></section>; }
 
 function BackBar({ onBack }) { return <div className="back-bar"><button type="button" onClick={onBack}><ArrowLeft /> Home</button></div>; }
 function BottomNav({ screen, onNavigate }) { const items = [["home", "Home", House], ["mods", "Mods", LayoutGrid], ["discover", "Discover", PackageSearch], ["history", "History", History], ["help", "Help", LifeBuoy]]; return <nav className="bottom-nav" aria-label="Primary navigation">{items.map(([value, label, Icon]) => <button key={value} className={screen === value ? "active" : ""} type="button" onClick={() => onNavigate(value)}><Icon /><span>{label}</span></button>)}</nav>; }

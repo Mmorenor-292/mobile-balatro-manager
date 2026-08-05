@@ -4,7 +4,7 @@ These drafts describe the public source release without claiming that the projec
 
 ## Reddit
 
-**Title:** I built MBM, a local-first mod manager for Balatro on Android
+**Title:** I built MBM, a privacy-conscious mod manager for Balatro on Android
 
 I’m working on MBM — Mobile Balatro Manager, an Android companion for managing user-owned Balatro mod folders and preparing local mobile builds.
 
@@ -25,7 +25,7 @@ I’m looking for reports from Android devices with real mod folders. If a build
 
 ## X
 
-MBM — Mobile Balatro Manager is now public: a local-first Android companion for managing Balatro mods, backups, install history, and user-owned Steam/mobile build sources.
+MBM — Mobile Balatro Manager is now public: an Android companion for browsing trusted mod indexes, managing Balatro mods, backups, install history, and user-owned Steam/mobile build sources.
 
 It never ships Balatro or bypasses Play Store signatures, DRM, or licensing. The source is here:
 

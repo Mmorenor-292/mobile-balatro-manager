@@ -90,6 +90,24 @@ public final class CatalogClient {
     }
 
     public String resolveDownloadUrl(CatalogItem item) throws Exception {
+        return resolveDownloadUrl(item, "", "");
+    }
+
+    public String resolveDownloadUrl(CatalogItem item, String requestedVersion, String requestedUrl) throws Exception {
+        if (requestedUrl != null && !requestedUrl.isBlank()) {
+            return requestedUrl;
+        }
+        if (requestedVersion != null && !requestedVersion.isBlank()) {
+            for (CatalogVersion release : item.versions()) {
+                if (release.version().equalsIgnoreCase(requestedVersion)
+                        && !release.downloadUrl().isBlank()) {
+                    return release.downloadUrl();
+                }
+            }
+            if (!requestedVersion.equalsIgnoreCase(item.version())) {
+                throw new IllegalArgumentException("The selected version has no verified download archive.");
+            }
+        }
         if (!item.downloadUrl().isBlank()) {
             return item.downloadUrl();
         }
@@ -150,7 +168,14 @@ public final class CatalogClient {
                     item.optBoolean("requires_steamodded"),
                     item.optBoolean("requires_talisman"),
                     downloads == null ? 0 : downloads.optLong("total"),
-                    0
+                    0,
+                    List.of(new CatalogVersion(
+                            item.optString("version"),
+                            first(item.optString("download_url"), item.optString("downloadURL")),
+                            downloads == null ? 0 : downloads.optLong("total"),
+                            0,
+                            String.valueOf(item.optLong("updated_at"))
+                    ))
             ));
         }
         return result;
@@ -191,7 +216,8 @@ public final class CatalogClient {
                     true,
                     false,
                     latest.optLong("downloads"),
-                    latest.optLong("file_size")
+                    latest.optLong("file_size"),
+                    thunderstoreVersions(versions)
             ));
         }
         return result;
@@ -246,7 +272,12 @@ public final class CatalogClient {
                         false,
                         false,
                         metadata.optLong("stargazers_count"),
-                        0
+                        0,
+                        releaseUrl.isBlank()
+                                ? List.of(new CatalogVersion(
+                                first(metadata.optString("default_branch"), "main"), "", metadata.optLong("stargazers_count"), 0, ""))
+                                : List.of(new CatalogVersion(
+                                first(metadata.optString("default_branch"), "main"), releaseUrl, metadata.optLong("stargazers_count"), 0, ""))
                 ));
             } catch (Exception ignored) {
                 // A stale or rate-limited link must not make the whole catalog fail.
@@ -363,8 +394,34 @@ public final class CatalogClient {
                 item.optBoolean("requiresSteamodded"),
                 item.optBoolean("requiresTalisman"),
                 item.optLong("downloads"),
-                item.optLong("fileSize")
+                item.optLong("fileSize"),
+                catalogVersions(item.optJSONArray("versions"))
         );
+    }
+
+    private static List<CatalogVersion> thunderstoreVersions(JSONArray versions) {
+        return catalogVersions(versions);
+    }
+
+    private static List<CatalogVersion> catalogVersions(JSONArray versions) {
+        if (versions == null) return List.of();
+        List<CatalogVersion> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < versions.length(); i++) {
+            JSONObject release = versions.optJSONObject(i);
+            if (release == null || !release.optBoolean("is_active", true)) continue;
+            String version = first(release.optString("version_number"), release.optString("version"));
+            String url = first(release.optString("download_url"), release.optString("downloadUrl"));
+            if (version.isBlank() || !seen.add(version.toLowerCase(Locale.ROOT))) continue;
+            result.add(new CatalogVersion(
+                    version,
+                    url,
+                    release.optLong("downloads"),
+                    release.optLong("file_size", release.optLong("fileSize")),
+                    first(release.optString("date_created"), release.optString("dateCreated"))
+            ));
+        }
+        return List.copyOf(result);
     }
 
     private static String get(String address) throws Exception {
