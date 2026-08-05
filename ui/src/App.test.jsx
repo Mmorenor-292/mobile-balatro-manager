@@ -53,13 +53,16 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     expect(document.documentElement.dataset.wallpaper).toBe("blueprint");
   });
 
-  it("filters the in-app Awesome Balatro directory without pretending source-only entries are installable", async () => {
+  it("filters the in-app Awesome Balatro directory and installs GitHub archives", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Discover" }));
     await user.click(screen.getByRole("tab", { name: "Awesome Balatro" }));
-    expect(screen.getByText("Awesome Balatro directory")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Source only" })).toBeDisabled();
+    expect(screen.getByText("Bunco")).toBeInTheDocument();
+    const card = screen.getByText("Bunco").closest("article");
+    expect(within(card).getByRole("button", { name: "Install" })).toBeEnabled();
+    await user.click(within(card).getByRole("button", { name: "Install" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/installed in quarantine/i);
   });
 
   it("shows installed and latest versions and lets the user choose a release", async () => {

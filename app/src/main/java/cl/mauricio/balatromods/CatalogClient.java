@@ -224,11 +224,10 @@ public final class CatalogClient {
     }
 
     /**
-     * Awesome Balatro is a human-curated directory, not a package registry.
-     * We keep it inside Discover, but only mark an entry installable when the
-     * linked GitHub repository exposes a verified release ZIP. Discord,
-     * Nexus, drive and source-only links remain useful catalog entries without
-     * pretending that MBM can safely download them.
+     * Awesome Balatro is a human-curated directory. GitHub entries are still
+     * real repositories, so a tagged release is preferred and the repository
+     * source archive is a safe fallback when the author has not published a
+     * release asset. Non-GitHub links remain visible but are not guessed at.
      */
     private List<CatalogItem> fetchAwesomeBalatro() throws Exception {
         String readme = getText(AWESOME_BALATRO);
@@ -255,14 +254,18 @@ public final class CatalogClient {
                 String owner = metadata.optJSONObject("owner") == null
                         ? repository.substring(0, repository.indexOf('/'))
                         : metadata.optJSONObject("owner").optString("login");
+                String branch = first(metadata.optString("default_branch"), "main");
                 String releaseUrl = githubReleaseAsset(repository);
+                if (releaseUrl.isBlank()) {
+                    releaseUrl = githubSourceArchive(repository, branch);
+                }
                 result.add(new CatalogItem(
                         "awesome:" + repository,
                         "Awesome Balatro",
                         name,
                         owner,
-                        first(metadata.optString("default_branch"), "main"),
-                        stripMarkdown(first(metadata.optString("description"), "Human-curated Awesome Balatro entry.\nInstall only when a verified release archive is available.")),
+                        branch,
+                        stripMarkdown(first(metadata.optString("description"), "A real GitHub repository from the Awesome Balatro collection. MBM downloads its release or source archive and inspects it before installation.")),
                         releaseUrl,
                         first(metadata.optString("html_url"), "https://github.com/" + repository),
                         name,
@@ -275,9 +278,9 @@ public final class CatalogClient {
                         0,
                         releaseUrl.isBlank()
                                 ? List.of(new CatalogVersion(
-                                first(metadata.optString("default_branch"), "main"), "", metadata.optLong("stargazers_count"), 0, ""))
+                                branch, "", metadata.optLong("stargazers_count"), 0, ""))
                                 : List.of(new CatalogVersion(
-                                first(metadata.optString("default_branch"), "main"), releaseUrl, metadata.optLong("stargazers_count"), 0, ""))
+                                branch, releaseUrl, metadata.optLong("stargazers_count"), 0, ""))
                 ));
             } catch (Exception ignored) {
                 // A stale or rate-limited link must not make the whole catalog fail.
@@ -303,9 +306,15 @@ public final class CatalogClient {
                 }
             }
         } catch (Exception ignored) {
-            // Source-only entries are still shown with a disabled install action.
+            // The caller falls back to the repository source archive.
         }
         return "";
+    }
+
+    private String githubSourceArchive(String repository, String branch) {
+        String safeBranch = branch == null || branch.isBlank() ? "main" : branch.trim();
+        return "https://github.com/" + repository + "/archive/refs/heads/"
+                + Uri.encode(safeBranch, "/") + ".zip";
     }
 
     private String fetchBmiDetailDownload(String id) throws Exception {

@@ -61,6 +61,13 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 - Frontend: `npm ci`, `npm test -- --run` (8/8), `npm run lint`, and `npm run build` — passed.
 - Android: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` — passed with the canonical Android App Lab SDK.
 - Release APK: `cl.mauricio.balatromods`, version `2.0.0` (`versionCode 20`), signed with the existing BMM release certificate (SHA-256 `e4748c44c8fa257d605278446b449dbbb5fa498ba9b51d3e18ab591858d5d671`).
+
+## Awesome Balatro follow-up — 2026-08-05
+
+- GitHub entries now prefer a published release ZIP and fall back to the repository's real branch archive (`https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip`). The archive remains bounded and inspected by `CatalogInstaller` before any files reach the Mods folder.
+- UI regression: the Awesome Balatro GitHub fixture is installable and the mock Install action updates its catalog state; 9/9 web tests passed.
+- Android release rebuilt, installed incrementally on `emulator-5554`, and cold-launched without fatal manager markers.
+- Updated APK SHA-256: `3883D77582F2CB7D1936D20E2F397161BBB769DEC39E2E99E2371533CE7CBCE1`.
 - Embedded web assets include the compact mod-card rules (`min-height: 4.55rem`) and current wallpaper assets.
 - Android smoke: `adb install -r -d` and cold launch passed on `emulator-5554`; no fatal exception was found in the collected logcat.
 - Release artifact SHA-256: `A65CD100796FBD7FDA0F05FF12081CB30A6DEDB7174DAFF4150E2EE336A25769`.
@@ -68,7 +75,7 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 ## Release verification — 2026-08-05
 
 - Frontend: `npm test -- --run` (9/9), `npm run lint`, and `npm run build` — passed.
-- Catalog behavior: Discover refreshes trusted indexes on entry; cards show installed/latest versions, expose verified release choices where the source provides them, and route Install/Update through the selected archive URL. Awesome Balatro entries without a verified archive remain source-only.
+- Catalog behavior: Discover refreshes trusted indexes on entry; cards show installed/latest versions, expose verified release choices where the source provides them, and route Install/Update through the selected archive URL. GitHub entries from Awesome Balatro prefer a release asset and fall back to the repository source archive; only non-downloadable external links remain source-only.
 - Android behavior: mod enable/disable and other file operations are queued on the I/O executor without a blocking full-screen loading state; the catalog refresh still reports a compact non-blocking status chip.
 - Android: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` — passed with the canonical Android App Lab toolchain.
 - Android smoke: release APK installed incrementally on `emulator-5554`, cold launch passed, screenshot captured, and collected logcat contained no fatal manager exception.
