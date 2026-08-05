@@ -54,3 +54,13 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 - Desktop mod transfer is explicit and LAN-only, but it imports into a user-selected writable Android `Mods` folder; it does not silently inject into an official Play Store private sandbox. Direct SAF import on a physical ARM64 phone remains open.
 - The public QA matrix does not include a commercial Play Store APK. It verifies the package IDs and read-only source handoff in code, plus the full separate-package builder with an authorized local APK. The generated native APK is personal-use output and is not redistributed as part of MBM.
 - The upstream Maker does not package Steamodded/Lovely/mod folders into the `.love` source. MBM detects and reports those folders and manages them after installation through the Mods route; compatibility still depends on the mod and the generated mobile environment.
+
+## Release verification — 2026-08-04
+
+- Source revision: `a88cf12` (`main`) plus this verification record.
+- Frontend: `npm ci`, `npm test -- --run` (8/8), `npm run lint`, and `npm run build` — passed.
+- Android: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` — passed with the canonical Android App Lab SDK.
+- Release APK: `cl.mauricio.balatromods`, version `2.0.0` (`versionCode 20`), signed with the existing BMM release certificate (SHA-256 `e4748c44c8fa257d605278446b449dbbb5fa498ba9b51d3e18ab591858d5d671`).
+- Embedded web assets include the compact mod-card rules (`min-height: 4.55rem`) and current wallpaper assets.
+- Android smoke: `adb install -r -d` and cold launch passed on `emulator-5554`; no fatal exception was found in the collected logcat.
+- Release artifact SHA-256: `A65CD100796FBD7FDA0F05FF12081CB30A6DEDB7174DAFF4150E2EE336A25769`.
