@@ -16,21 +16,25 @@ final class VersionOrder {
     }
 
     static boolean isNewer(String candidate, String installed) {
+        return compare(candidate, installed) > 0;
+    }
+
+    static int compare(String candidate, String installed) {
         String next = normalize(candidate);
         String current = normalize(installed);
-        if (next.isBlank() || current.isBlank() || next.equals(current)) return false;
-        if (!containsDigit(next) || !containsDigit(current)) return false;
+        if (next.isBlank() || current.isBlank() || next.equals(current)) return 0;
+        if (!containsDigit(next) || !containsDigit(current)) return 0;
 
         // A plain release is newer than a prerelease sharing the exact numeric core.
-        if (PLAIN_RELEASE.matcher(next).matches() && current.startsWith(next + "-")) return true;
-        if (PLAIN_RELEASE.matcher(current).matches() && next.startsWith(current + "-")) return false;
+        if (PLAIN_RELEASE.matcher(next).matches() && current.startsWith(next + "-")) return 1;
+        if (PLAIN_RELEASE.matcher(current).matches() && next.startsWith(current + "-")) return -1;
 
         List<String> left = tokens(next);
         List<String> right = tokens(current);
         int length = Math.max(left.size(), right.size());
         for (int index = 0; index < length; index++) {
-            if (index >= left.size()) return false;
-            if (index >= right.size()) return true;
+            if (index >= left.size()) return -1;
+            if (index >= right.size()) return 1;
             String a = left.get(index);
             String b = right.get(index);
             boolean aNumber = Character.isDigit(a.charAt(0));
@@ -39,9 +43,19 @@ final class VersionOrder {
             if (aNumber && bNumber) compared = new BigInteger(a).compareTo(new BigInteger(b));
             else if (aNumber != bNumber) compared = aNumber ? 1 : -1;
             else compared = a.compareTo(b);
-            if (compared != 0) return compared > 0;
+            if (compared != 0) return compared;
         }
-        return false;
+        return 0;
+    }
+
+    static boolean isSourceRevision(String version) {
+        if (version == null) return false;
+        return version.trim().matches("(?i)^[0-9a-f]{7,40}$");
+    }
+
+    static boolean isComparable(String version) {
+        String normalized = normalize(version);
+        return !normalized.isBlank() && containsDigit(normalized) && !tokens(normalized).isEmpty();
     }
 
     private static String normalize(String raw) {

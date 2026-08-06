@@ -4,7 +4,7 @@
 
 | Layer | Command / flow | Expected result |
 | --- | --- | --- |
-| Web UI | `npm test -- --run` | 8 Vitest tests pass |
+| Web UI | `npm test -- --run` | 12 Vitest tests pass |
 | Web lint | `npm run lint` | ESLint exits 0 |
 | Web build | `npm run build` | Vite writes assets to Android `assets/web` |
 | Android unit/lint | `gradle testDebugUnitTest lintDebug` | All tests/lint pass |
@@ -29,9 +29,19 @@
 
 1. Launch the debug APK and wait for `MBM - MOBILE BALATRO MANAGER`.
 2. Open `Mods`, connect a `Mods`/`ASET` folder through Android's picker, then refresh.
-3. Import a ZIP or folder; confirm it is staged in quarantine and appears in Installation History.
-4. Delete a non-framework mod; confirm it moves to reversible quarantine and its history entry offers `Restore`.
+3. Import a ZIP or folder; confirm the button reports progress, the mod is installed directly in the collection, and the action appears in Installation History.
+4. Delete a non-framework mod; confirm it is removed permanently after the explicit confirmation and no quarantine folder is left behind.
 5. Open Settings and switch each wallpaper; reload the app and confirm the selected wallpaper persists.
 6. Open Native, select an APK, and confirm the result is a truthful safe fallback when the copy cannot be patched.
 7. Complete a Steam build with the helper, then exercise `Install on this phone`, `Save APK`, and `Share APK`; each action must be explicit and must use Android's system UI.
 8. With the helper paired and a writable destination selected in **Saves**, choose a desktop profile and press **Import desktop saves**; confirm a backup is created before the bounded LAN archive is extracted.
+
+## Release 2.0.3 validation (2026-08-06)
+
+- `npm test -- --run`, ESLint, Vite production build, Android unit tests, Android Lint, Lint Vital, and signed release packaging passed.
+- The signed release installed and launched on `BMM_Public_API36` as version code `23` / version `2.0.3`.
+- A SAF-backed fixture proved exact dependency matching: `Pokermon-Maelmc` did not satisfy `Pokermon`, and `Pokermon 3.8.1-0724a` was reported as too old for `>=3.8.1-0731b`.
+- Refresh automatically patched IMM's strict mobile-incompatible parser and preserved the original in private compatibility backup storage.
+- Discover loaded the live Mod Index catalog, displayed real thumbnails, exposed the source revision selector, and updated Pokermon to metadata version `3.8.1-0731b`.
+- The update button visibly changed to `UPDATING MOD…`; rapid actions on another mod displayed `QUEUED · DISABLING MOD` and completed serially without blocking navigation.
+- No `FATAL EXCEPTION` from `cl.mauricio.balatromods` appeared in the emulator log during the validation flow.

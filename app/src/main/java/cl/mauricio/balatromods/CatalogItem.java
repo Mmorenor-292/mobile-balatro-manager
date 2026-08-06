@@ -52,6 +52,11 @@ public record CatalogItem(
     }
 
     public JSONObject toJson(boolean installed, String installedVersion) {
+        return toJson(installed, installedVersion,
+                installed && VersionOrder.isNewer(version, installedVersion));
+    }
+
+    public JSONObject toJson(boolean installed, String installedVersion, boolean updateAvailable) {
         JSONObject json = new JSONObject();
         try {
             json.put("id", id);
@@ -74,7 +79,9 @@ public record CatalogItem(
             String current = installedVersion == null ? "" : installedVersion.trim();
             json.put("installedVersion", current);
             json.put("latestVersion", version);
-            json.put("updateAvailable", installed && VersionOrder.isNewer(version, current));
+            json.put("versionKind", VersionOrder.isSourceRevision(version)
+                    ? "source-revision" : "release");
+            json.put("updateAvailable", installed && updateAvailable);
             JSONArray releaseVersions = new JSONArray();
             if (versions != null && !versions.isEmpty()) {
                 for (CatalogVersion release : versions) releaseVersions.put(release.toJson());

@@ -43,6 +43,16 @@ public class ModMetadataParserTest {
     }
 
     @Test
+    public void preservesDependencyVersionRequirements() {
+        ModMetadataParser.ParsedMetadata result = ModMetadataParser.parse(
+                "{\"id\":\"Agarmons\",\"dependencies\":[\"Pokermon (>=3.8.1-0731b)\"]}",
+                "Agarmons"
+        );
+
+        assertEquals("Pokermon (>=3.8.1-0731b)", result.dependencies().get(0));
+    }
+
+    @Test
     public void filtersByStatusAndText() {
         ModEntry active = entry("Zoomer", false);
         ModEntry hidden = entry("Paperback", true);

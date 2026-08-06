@@ -6,7 +6,7 @@ const mockState = {
   folder: "ASET/Mods",
   gameFile: "Balatro.exe · Steam library detected",
   nativeCompatibility: "unsupported",
-  version: "2.0.1",
+  version: "2.0.3",
   channel: "beta",
   canUndo: true,
   counts: { active: 12, hidden: 6, problems: 2 },

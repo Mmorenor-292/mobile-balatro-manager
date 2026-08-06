@@ -501,6 +501,24 @@ button:disabled { cursor: not-allowed; }
 .diagnostic.error { color: var(--red); }
 .diagnostic.warning { color: var(--gold); }
 .diagnostic.info { color: var(--blue); }
+.mod-operation {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  margin-top: .28rem;
+  color: var(--blue);
+  font: 800 .58rem var(--display);
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+.mod-operation.queued { color: var(--gold); }
+.mod-operation svg { width: .8rem; height: .8rem; flex: 0 0 auto; }
+.queue-summary {
+  color: var(--gold) !important;
+  font: 800 .58rem var(--display);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 .switch { position: relative; display: grid; min-width: 3.3rem; min-height: 3rem; place-items: center; }
 .switch input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 .switch-track {

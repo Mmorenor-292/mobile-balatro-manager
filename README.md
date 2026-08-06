@@ -1,4 +1,4 @@
-# MBM - Mobile Balatro Manager 2.0.2
+# MBM - Mobile Balatro Manager 2.0.3
 
 An independent Android manager for Balatro Modded. It remains available even when a
 broken mod prevents the game from starting, and now exposes separate Steam/local,
@@ -18,6 +18,17 @@ Downloaded and imported mods are inspected in private cache first, then installe
 into the collection and enabled. Discover and Library always show a version selector; when
 the source exposes release history, the user can update, downgrade or reinstall without
 deleting the current copy first. The app never executes Lua code.
+
+Mod writes remain serialized for Android storage safety, but individual cards now
+show **Queued**, **Installing**, **Updating**, **Enabling**, **Disabling** or
+**Deleting** while they run. A busy mod is locked; actions for a different mod can
+still be queued instead of being rejected by a global blocker.
+
+Dependency rules retain their required versions and use exact Steamodded IDs. A
+fork such as `PokermonMaelmc` no longer satisfies `Pokermon`, and an installed
+`3.8.1-0724a` is reported as too old for `Pokermon (>=3.8.1-0731b)`. **Update all**
+refreshes catalog metadata first and tracks source-revision hashes separately from
+the semantic version declared inside each mod.
 
 Deleting a mod is irreversible and removes its folder instead of renaming it inside `Mods`.
 Legacy `.bmm-trash--*` folders are counted as junk and removed only when the user
@@ -73,13 +84,16 @@ The signing properties file must define `storeFile`, `storePassword`, `keyAlias`
 - Awesome Balatro is treated as a community directory, not a package registry. Each
   entry is inspected independently and installs are limited to HTTPS release archives.
 - A desktop mod is not guaranteed to work with the mobile port.
-- IMM 2.5.1 rejects Balatro's mobile version suffix. Open IMM's Library options and use
-  **Fix IMM mobile version**; MBM stores the original parser in app-private storage and
-  applies the narrow compatibility change without creating another mod folder.
+- IMM 2.5.1/2.6.0 rejects Balatro's mobile version suffix. MBM now applies the narrow,
+  idempotent compatibility patch automatically after connecting the folder and after
+  every IMM install/update, with a versioned original in app-private storage. The
+  manual **Fix IMM mobile version** action remains available.
 - The existing Balatro APK is ARM; direct game-launch testing belongs on a physical
   phone or ARM emulator, not the x86_64 emulator used for manager QA.
 
 See [docs/NOTEBOOK-TESTING.md](docs/NOTEBOOK-TESTING.md) for notebook test routes.
+See [docs/WIRELESS-DEVELOPER-BRIDGE.md](docs/WIRELESS-DEVELOPER-BRIDGE.md) for the
+planned no-USB, hash-checked notebook workspace used to inspect and repair phone mods.
 See [docs/SOCIAL-POSTS.md](docs/SOCIAL-POSTS.md) for launch copy and [docs/LICENSES-ATTRIBUTIONS.md](docs/LICENSES-ATTRIBUTIONS.md) for third-party notices.
 
 For the real Steam-to-Android build, place the user-provided upstream Balatro Mobile

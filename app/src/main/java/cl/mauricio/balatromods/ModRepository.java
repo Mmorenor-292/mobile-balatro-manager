@@ -214,27 +214,44 @@ public final class ModRepository {
 
     private static void applyCrossModDiagnostics(List<ModEntry> mods) {
         Map<String, Integer> ids = new HashMap<>();
-        Set<String> available = new HashSet<>();
+        Map<String, List<ModEntry>> available = new HashMap<>();
         for (ModEntry mod : mods) {
-            String id = normalizeId(mod.id);
+            String id = DependencySpec.canonicalId(mod.id);
             ids.put(id, ids.getOrDefault(id, 0) + 1);
-            available.add(id);
-            available.add(normalizeId(mod.name));
-            available.add(normalizeId(mod.folderName));
+            if (!id.isBlank()) available.computeIfAbsent(id, ignored -> new ArrayList<>()).add(mod);
+            if (id.isBlank()) {
+                addDependencyAlias(available, mod.name, mod);
+                addDependencyAlias(available, mod.folderName, mod);
+            }
         }
 
         for (int i = 0; i < mods.size(); i++) {
             ModEntry mod = mods.get(i);
             List<String> diagnostics = new ArrayList<>(mod.diagnostics);
             String severity = mod.severity;
-            if (ids.getOrDefault(normalizeId(mod.id), 0) > 1) {
+            if (ids.getOrDefault(DependencySpec.canonicalId(mod.id), 0) > 1) {
                 diagnostics.add("Duplicate mod ID: " + mod.id);
                 severity = worst(severity, "error");
             }
             for (String dependency : mod.dependencies) {
-                String normalized = normalizeId(dependency);
-                if (!normalized.isBlank() && !containsCompatible(available, normalized)) {
-                    diagnostics.add("Missing dependency: " + dependency);
+                DependencySpec spec = DependencySpec.parse(dependency);
+                List<ModEntry> candidates = available.getOrDefault(spec.id, List.of());
+                if (!spec.id.isBlank() && candidates.isEmpty()) {
+                    diagnostics.add("Missing dependency: " + spec.requirementLabel());
+                    severity = worst(severity, "error");
+                    continue;
+                }
+                if (!spec.version.isBlank() && candidates.stream().noneMatch(
+                        candidate -> spec.isSatisfiedBy(candidate.version)
+                )) {
+                    String installed = candidates.stream()
+                            .map(candidate -> candidate.version == null || candidate.version.isBlank()
+                                    ? "unknown" : candidate.version)
+                            .distinct()
+                            .reduce((left, right) -> left + ", " + right)
+                            .orElse("unknown");
+                    diagnostics.add("Dependency requires " + spec.requirementLabel()
+                            + "; installed " + installed);
                     severity = worst(severity, "error");
                 }
             }
@@ -244,16 +261,13 @@ public final class ModRepository {
         }
     }
 
-    private static boolean containsCompatible(Set<String> available, String dependency) {
-        if (available.contains(dependency)) {
-            return true;
-        }
-        for (String candidate : available) {
-            if (candidate.contains(dependency) || dependency.contains(candidate)) {
-                return true;
-            }
-        }
-        return false;
+    private static void addDependencyAlias(
+            Map<String, List<ModEntry>> available,
+            String value,
+            ModEntry mod
+    ) {
+        String alias = DependencySpec.canonicalId(value);
+        if (!alias.isBlank()) available.computeIfAbsent(alias, ignored -> new ArrayList<>()).add(mod);
     }
 
     private static ModEntry copyWithDiagnostics(

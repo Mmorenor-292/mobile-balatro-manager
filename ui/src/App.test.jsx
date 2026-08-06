@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { mockState } from "./bridge";
 
 describe("MBM - Mobile Balatro Manager public vNext", () => {
   beforeEach(() => {
@@ -105,6 +106,32 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     await user.click(selectors[1]);
     expect(screen.getByText("2 selected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete selected" })).toBeInTheDocument();
+  });
+
+  it("shows per-mod queued feedback without blocking a different mod", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Mods" }));
+    window.__nativeReceive({
+      ...mockState,
+      operations: [{
+        token: "op-handy",
+        kind: "disable",
+        itemId: "HandyBalatro",
+        source: "local",
+        label: "Disabling mod…",
+        status: "running",
+        exclusive: false,
+        active: true,
+      }],
+      operation: { active: true, kind: "disable", itemId: "HandyBalatro", source: "local", label: "Disabling mod…", status: "running", exclusive: false },
+    });
+
+    expect(await screen.findByText("Disabling mod…")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Disable Handy" })).toBeDisabled();
+    const pokermon = screen.getByRole("checkbox", { name: "Disable Pokermon" });
+    expect(pokermon).toBeEnabled();
+    await user.click(pokermon);
   });
 
   it("updates every catalog-matched mod with visible progress", async () => {
