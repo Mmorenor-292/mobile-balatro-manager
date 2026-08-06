@@ -2,10 +2,11 @@ const mockState = {
   connected: true,
   providerDetected: true,
   loading: false,
+  operation: { active: false, kind: "", itemId: "", source: "", label: "" },
   folder: "ASET/Mods",
   gameFile: "Balatro.exe · Steam library detected",
   nativeCompatibility: "unsupported",
-  version: "2.0.0",
+  version: "2.0.1",
   channel: "beta",
   canUndo: true,
   counts: { active: 12, hidden: 6, problems: 2 },
@@ -16,6 +17,7 @@ const mockState = {
     { folder: "BetterDescriptions", name: "Better Descriptions", version: "1.1.0", hidden: true, severity: "ok", diagnostics: ["Hidden"], dependencies: [] },
     { folder: "CustomJokersPack", name: "Custom Jokers Pack", version: "2.3.0", hidden: false, severity: "error", diagnostics: ["Missing dependency: LovelyUI"], dependencies: ["LovelyUI"] },
     { folder: "VisualOverhaul", name: "Visual Overhaul", version: "1.0.4", hidden: false, severity: "warning", diagnostics: ["Corrupted metadata"], dependencies: [] },
+    { id: "balatro_imm", folder: "imm", name: "imm", version: "2.5.1", hidden: false, severity: "ok", diagnostics: ["No issues detected"], dependencies: ["Steamodded"] },
   ],
   recovery: {
     active: false,
@@ -202,9 +204,14 @@ export function invoke(method, payload = {}) {
     const item = { id: `snapshot-${Date.now()}`, label: "Manual backup", createdAt: "Just now", entries: `${state.mods.length} mods · reversible` };
     emitMock({ canUndo: true, backupHistory: [item, ...(state.backupHistory || [])], history: [item, ...(state.history || [])], message: "Backup saved" });
   } else if (method === "deleteMod") {
-    emitMock({ message: "Mod moved to quarantine. Undo is available." });
+    const mods = state.mods.filter((mod) => mod.folder !== payload.folder);
+    const active = mods.filter((mod) => !mod.hidden).length;
+    emitMock({ mods, counts: { ...state.counts, active, hidden: mods.length - active }, message: "Mod was permanently deleted." });
   } else if (method === "deleteMods") {
-    emitMock({ message: "Selected mods moved to reversible quarantine. Undo is available." });
+    const folders = new Set(payload.folders || []);
+    const mods = state.mods.filter((mod) => !folders.has(mod.folder));
+    const active = mods.filter((mod) => !mod.hidden).length;
+    emitMock({ mods, counts: { ...state.counts, active, hidden: mods.length - active }, message: "Selected mods were permanently deleted." });
   } else if (method === "importMod") {
     emitMock({ message: "Choose a ZIP or folder from device storage." });
   } else if (method === "importModFolder") {
@@ -213,9 +220,7 @@ export function invoke(method, payload = {}) {
     emitMock({ saveFolder: "Connected save folder", saveFileCount: 2, saveProfiles: ["Root folder", "Profile 1"], message: "Save folder connected" });
   } else if (method === "chooseSaveTarget") {
     emitMock({ saveTargetFolder: "Connected target folder", message: "Save target connected" });
-  } else if (method === "restoreInstall") {
-    emitMock({ message: "Mod restored from quarantine" });
-  } else if (["pairDesktop", "selectSteamGame", "detectNative", "selectNativeApk", "buildSteam", "buildNative", "shareArtifact", "installArtifact", "previewSave", "importSave", "importDesktopSave", "exportSave", "exportHistory", "viewInstall", "chooseCatalogVersion", "resetSettings", "setHistoryRetention", "deleteHistoryEntry"].includes(method)) {
+  } else if (["pairDesktop", "selectSteamGame", "detectNative", "selectNativeApk", "buildSteam", "buildNative", "shareArtifact", "installArtifact", "previewSave", "importSave", "importDesktopSave", "exportSave", "exportHistory", "viewInstall", "repairImmVersion", "resetSettings", "setHistoryRetention", "deleteHistoryEntry"].includes(method)) {
     const messages = {
       pairDesktop: "Desktop paired on local network",
       selectSteamGame: "Game file selected",
@@ -231,8 +236,7 @@ export function invoke(method, payload = {}) {
       exportSave: "Local save backup exported",
       exportHistory: "History export created",
       viewInstall: "Installation details opened",
-      chooseCatalogVersion: "Version picker opened",
-      updateCatalogMod: "Update queued in quarantine",
+      repairImmVersion: "IMM fixed for Balatro mobile version strings. Restart Balatro before opening IMM.",
       resetSettings: "Preferences reset",
       setHistoryRetention: "History retention updated",
       deleteHistoryEntry: "History entry removed",
@@ -243,20 +247,16 @@ export function invoke(method, payload = {}) {
   } else if (method === "loadCatalog") {
     emitMock({ message: "Catalog updated" });
   } else if (method === "installCatalogMod" || method === "updateCatalogMod") {
-    const catalog = state.catalog.map((item) =>
-      item.id === payload.id && item.source === payload.source
-        ? {
-            ...item,
-            installed: true,
-            installedVersion: payload.version || item.latestVersion || item.version,
-            updateAvailable: false,
-          }
-        : item,
-    );
+    const kind = method === "updateCatalogMod" ? "update" : "install";
     emitMock({
-      catalog,
-      message: method === "updateCatalogMod" ? "Mod updated in quarantine. Review it in Library, then enable it." : "Mod installed in quarantine. Review it in Library, then enable it.",
+      operation: { active: true, kind, itemId: payload.id, source: payload.source, label: kind === "update" ? "Updating mod…" : "Installing mod…" },
+      message: kind === "update" ? "Updating mod…" : "Installing mod…",
     });
+    setTimeout(() => {
+      const installedVersion = payload.version || state.catalog.find((item) => item.id === payload.id && item.source === payload.source)?.latestVersion || "latest";
+      const catalog = state.catalog.map((item) => item.id === payload.id && item.source === payload.source ? { ...item, installed: true, installedVersion, updateAvailable: false } : item);
+      emitMock({ catalog, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: kind === "update" ? `Mod updated to ${installedVersion} and enabled.` : `Mod installed at ${installedVersion} and enabled.` });
+    }, 500);
   }
 }
 

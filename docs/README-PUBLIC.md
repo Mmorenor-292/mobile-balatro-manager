@@ -6,7 +6,7 @@ MBM - Mobile Balatro Manager is an independent Android companion for managing a 
 
 - **Steam copy**: use the portable Windows helper and a local-network pairing code. See [GUIDE-STEAM.md](GUIDE-STEAM.md).
 - **Native Android**: select an installed APK or APK set for a safety preflight. Unsupported Play Store copies are sent to the Steam fallback. See [GUIDE-NATIVE.md](GUIDE-NATIVE.md).
-- **Mods**: connect the Mods folder once, then import, enable, disable or quarantine mods.
+- **Mods**: connect the Mods folder once, then import, enable, disable, change versions or permanently delete mods.
 - **Saves**: preview, back up and export local progress. See [GUIDE-SAVES.md](GUIDE-SAVES.md).
 - **History**: use `Backup History` for restore points and `Installation History` for mod operations.
 
@@ -18,7 +18,7 @@ After a verified Steam build, the Android app can install the APK on the current
 
 When the paired helper reports `%APPDATA%/Balatro` saves, the **Saves** screen can import a selected profile or all compatible profiles into a user-selected writable destination. The transfer is a bounded, LAN-only ZIP requested by the phone, creates a reversible backup first, excludes the desktop `Mods` folder, and is deleted after use. Mods remain separately managed through **Mods** because the upstream Maker does not package them into the game source automatically.
 
-When the paired helper reports desktop mod folders, the **Mods** screen shows a hard-drive import action after the phone's writable `Mods` folder is connected. The helper creates a separate bounded ZIP, rejects desktop-only binaries, and the app quarantines conflicts before copying. The import is reversible and recorded in Installation History; it does not claim that every desktop mod is Android-compatible.
+When the paired helper reports desktop mod folders, the **Mods** screen shows a hard-drive import action after the phone's writable `Mods` folder is connected. The helper creates a separate bounded ZIP, rejects desktop-only binaries, and the app replaces same-name conflicts directly after staging. The import is recorded in Installation History; it does not claim that every desktop mod is Android-compatible.
 
 ## Testing build
 

@@ -1,5 +1,14 @@
 # Public vNext changelog
 
+## 2.0.1 · 2026-08-05
+
+- Added per-card `Installing…` / `Updating…` feedback without a blocking overlay.
+- Made version selection available in Discover and Library, including current/latest labels, upgrades, downgrades and reinstalls.
+- Fixed installed-mod matching so catalog updates no longer require delete/reinstall.
+- Replaced quarantine-based install/delete with inspected direct install, transactional update rollback in private cache, and permanent deletion.
+- Added a bounded, idempotent IMM mobile-version parser fix for `1.0.1o-FULL (STM)`.
+- Expanded Awesome Balatro release history from GitHub and consumes BMI version arrays when provided.
+
 ## 2.0.0 · 2026-08-02
 
 - Added a four-step Steam port wizard with local helper pairing, manual `.love`/

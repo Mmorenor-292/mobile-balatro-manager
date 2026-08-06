@@ -11,4 +11,4 @@ On Android, choose the folder containing the local save files from **Saves**, th
 
 When the Steam helper is paired, MBM can also show desktop profiles discovered under `%APPDATA%/Balatro`. Choose an Android destination folder, optionally select one profile, then press **Import desktop saves**. The helper sends a bounded archive over the local network only after that explicit action; the app creates a reversible backup before replacing conflicts. The archive excludes `%APPDATA%/Balatro/Mods`, which must be installed separately through the Mods screen.
 
-Every backup belongs in `Backup History`; restore it there. Installation and quarantine operations belong in `Installation History`.
+Every backup belongs in `Backup History`; restore it there. Installs, updates, and permanent deletions are recorded separately in `Installation History`.

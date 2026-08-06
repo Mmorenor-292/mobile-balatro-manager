@@ -11,7 +11,7 @@ I’m working on MBM — Mobile Balatro Manager, an Android companion for managi
 It can:
 
 - connect to an approved Mods folder through Android’s file picker;
-- import a ZIP or folder, inspect metadata without running Lua, and quarantine changes;
+- import a ZIP or folder, inspect metadata without running Lua, and install it directly into the selected collection;
 - enable or disable mods, restore backups, and keep separate backup and installation history;
 - browse Balatro Mod Index, Thunderstore, and Awesome Balatro entries inside the app;
 - pair with a Windows helper for a local Steam-to-Android build flow; and

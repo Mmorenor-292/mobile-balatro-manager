@@ -8,12 +8,18 @@ Native preflight, Saves, split History, Discover, Settings and Help surfaces.
 
 1. Build the Android app from source, then install the APK on a test device.
 2. Open **Steam copy** for the local desktop wizard or **Native Android** for preflight.
-3. Use **Mods** to import, enable, disable or move a mod to reversible quarantine.
+3. Use **Mods** to import, enable, disable, update or permanently delete a mod.
 4. Use **Saves** to choose whether progress is imported and **History** to restore backups
    or review installations.
 
-Downloaded mods are installed hidden in quarantine. Inspect them in Library and enable
-them manually. The app never executes Lua code.
+Downloaded and imported mods are inspected in private cache first, then installed directly
+into the collection and enabled. Discover and Library always show a version selector; when
+the source exposes release history, the user can update, downgrade or reinstall without
+deleting the current copy first. The app never executes Lua code.
+
+Deleting a mod is irreversible and removes its folder instead of renaming it inside `Mods`.
+Legacy `.bmm-trash--*` folders created by older manager builds are removed during the next
+scan so Balatro cannot mistake them for installed mods.
 
 If an earlier debug build of this manager is installed, Android may require you to
 uninstall that manager once because its signing key differs. Do not uninstall Balatro.
@@ -51,6 +57,9 @@ The signing properties file must define `storeFile`, `storePassword`, `keyAlias`
 - Awesome Balatro is treated as a community directory, not a package registry. Each
   entry is inspected independently and installs are limited to HTTPS release archives.
 - A desktop mod is not guaranteed to work with the mobile port.
+- IMM 2.5.1 rejects Balatro's mobile version suffix. Open IMM's Library options and use
+  **Fix IMM mobile version**; MBM stores the original parser in app-private storage and
+  applies the narrow compatibility change without creating another mod folder.
 - The existing Balatro APK is ARM; direct game-launch testing belongs on a physical
   phone or ARM emulator, not the x86_64 emulator used for manager QA.
 

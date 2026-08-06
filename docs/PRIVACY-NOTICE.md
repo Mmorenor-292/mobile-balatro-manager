@@ -6,7 +6,7 @@ MBM - Mobile Balatro Manager is a privacy-conscious companion for user-owned Bal
 
 ## What stays local
 
-- Mod folders, quarantine backups, save previews, save archives, installation history, and backup history stay on the device or the user-selected desktop.
+- Mod folders, private update rollback cache, save previews, save archives, installation history, and backup history stay on the device or the user-selected desktop.
 - Steam pairing is a one-time, LAN-only connection to the helper running on the user's PC. The helper reads only the approved Steam library roots and the selected game source. The app permits cleartext HTTP only for this explicitly paired local helper; it does not use a cloud endpoint.
 - A selected `.love`, `.zip`, or folder is sent only to the paired helper for the requested local build. Temporary build workspaces are deleted after the helper job ends.
 
@@ -22,7 +22,7 @@ The app may request access to a user-selected Mods folder, save folder, APK/sour
 
 ## Retention and deletion
 
-Delete moves mods into reversible quarantine where possible. The user can restore or remove history entries from the app. Temporary APK/source files are stored in the app cache and are eligible for Android cache cleanup.
+Mod deletion is permanent and removes the selected folder from `Mods`; it does not create a quarantine folder. Updates use a temporary app-private rollback copy only while replacing the installed version, then delete it after success. Temporary APK/source files are stored in the app cache and are eligible for Android cache cleanup.
 
 ## Third parties and changes
 

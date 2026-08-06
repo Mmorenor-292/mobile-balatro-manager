@@ -38,7 +38,7 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 - Home with Steam and Native routes.
 - Native incompatibility preflight and guided Steam fallback.
 - Mods import ZIP/folder actions and exactly two History tabs.
-- Reversible quarantine delete/restore and persistent installation history.
+- Direct inspected installs, transactional in-place updates, permanent deletion, and persistent installation history.
 - Save source/target selection, bounded conflict preview, reversible import path and ZIP export path.
 - Settings wallpaper selector with local persistence.
 - Settings advanced mode, local-only crash-report opt-in (off by default), and bounded history retention selector.
@@ -61,6 +61,14 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 - Frontend: `npm ci`, `npm test -- --run` (8/8), `npm run lint`, and `npm run build` — passed.
 - Android: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` — passed with the canonical Android App Lab SDK.
 - Release APK: `cl.mauricio.balatromods`, version `2.0.0` (`versionCode 20`), signed with the existing BMM release certificate (SHA-256 `e4748c44c8fa257d605278446b449dbbb5fa498ba9b51d3e18ab591858d5d671`).
+
+## Version 2.0.1 verification — 2026-08-05
+
+- Frontend: `npm test -- --run` (9/9), `npm run lint`, and `npm run build` passed. Preview verified version selectors for single- and multi-release catalog entries, visible `Installing…`/`Updating…` feedback, automatic toast dismissal, the IMM repair action, and permanent-delete controls.
+- Android: `testDebugUnitTest` and `assembleDebug` passed; debug APK installed as `cl.mauricio.balatromods` version `2.0.1` (`versionCode 21`) on `BMM_Public_API36` / `emulator-5570` and cold-launched without a fatal exception or `BMM_WEB` error.
+- Functional SAF test: connected `/sdcard/Download/MBMTest/Mods`, installed Steamodded from Discover, updated it in place, installed BalatroAnalytics, then permanently deleted BalatroAnalytics. The deleted folder disappeared and no `.bmm-trash--*` or `.bmm-incoming--*` directory remained.
+- Update safety: the previous installed folder is copied only to app-private cache while replacement is in progress; failures restore that copy before the operation cache is removed.
+- IMM crash repair: unit tests cover the narrow, idempotent parser patch for mobile game version suffixes such as `1.0.1o-FULL (STM)`. The Library exposes it only on detected IMM installations.
 
 ## Awesome Balatro follow-up — 2026-08-05
 

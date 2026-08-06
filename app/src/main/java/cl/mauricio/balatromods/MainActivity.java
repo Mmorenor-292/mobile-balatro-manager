@@ -38,6 +38,7 @@ import androidx.documentfile.provider.DocumentFile;
 import androidx.core.content.FileProvider;
 
 import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -110,6 +111,10 @@ public final class MainActivity extends Activity {
     private RecoverySession recovery = RecoverySession.empty();
     private boolean pageReady;
     private boolean loading;
+    private volatile String operationKind = "";
+    private volatile String operationItemId = "";
+    private volatile String operationSource = "";
+    private volatile String operationLabel = "";
     private String message = "";
     private String pendingReport = "";
     private File pendingSaveArchive;
@@ -1051,6 +1056,12 @@ public final class MainActivity extends Activity {
             pushState();
             return;
         }
+        operationKind = "import";
+        operationItemId = "desktop";
+        operationSource = "desktop";
+        operationLabel = "Importing desktop mods…";
+        message = operationLabel;
+        pushState();
         io.execute(() -> {
             File archive = new File(getCacheDir(), "desktop-balatro-mods.zip");
             File staging = new File(getCacheDir(), "desktop-mods-import-" + System.nanoTime());
@@ -1063,12 +1074,13 @@ public final class MainActivity extends Activity {
                 int imported = installDesktopModFolders(staging, current.folder(), current.mods());
                 scan = ModRepository.scan(this, selectedTreeUri);
                 main.post(() -> {
+                    clearOperation();
                     message = imported + (imported == 1 ? " desktop mod imported" : " desktop mods imported")
-                            + " into reversible quarantine. Review them before enabling.";
+                            + " and enabled.";
                     pushState();
                 });
             } catch (Exception error) {
-                main.post(() -> { message = "Desktop mod import failed: " + readable(error); pushState(); });
+                main.post(() -> { clearOperation(); message = "Desktop mod import failed: " + readable(error); pushState(); });
             } finally {
                 //noinspection ResultOfMethodCallIgnored
                 archive.delete();
@@ -1153,20 +1165,22 @@ public final class MainActivity extends Activity {
             if (current != null && ModRepository.isEssential(current)) {
                 throw new IllegalStateException("Framework mod " + name + " is protected; review it manually before replacement.");
             }
-            String quarantineName = "";
             DocumentFile old = modsFolder.findFile(name);
             if (old != null && old.exists()) {
-                quarantineName = ".bmm-trash--desktop--" + System.currentTimeMillis() + "--" + name;
-                if (!old.renameTo(quarantineName)) throw new IllegalStateException("Could not move existing mod " + name + " to reversible quarantine.");
+                ModRepository.deleteDocumentTree(old);
             }
             DocumentFile target = modsFolder.createDirectory(name);
             if (target == null) throw new IllegalStateException("Could not create desktop mod " + name + ".");
             try {
                 copyLocalTreeToDocument(folder, target, new int[]{0}, new long[]{0});
-                recordInstallHistory("desktop-import:" + name + ":" + System.currentTimeMillis(), name + " imported from desktop", "", "desktop-import", quarantineName, name);
+                DocumentFile marker = target.findFile(".lovelyignore");
+                if (marker != null && marker.exists() && !marker.delete()) {
+                    throw new IllegalStateException("Could not enable imported mod " + name + ".");
+                }
+                recordInstallHistory("desktop-import:" + name + ":" + System.currentTimeMillis(), name + " imported from desktop", "", "desktop-import", "", name);
                 imported++;
             } catch (Exception error) {
-                target.delete();
+                ModRepository.deleteDocumentTree(target);
                 throw error;
             }
         }
@@ -1658,7 +1672,7 @@ public final class MainActivity extends Activity {
         DocumentFile selected = DocumentFile.fromSingleUri(this, archive);
         if (selected != null && selected.getName() != null) name = selected.getName();
         final String finalName = name;
-        runFileOperation(() -> {
+        runFileOperation("import", finalName, "local", "Installing imported mod…", () -> {
             CatalogInstaller.InstallResult result = CatalogInstaller.installArchive(
                     this, scan.folder(), archive, finalName
             );
@@ -1670,7 +1684,7 @@ public final class MainActivity extends Activity {
                     "",
                     result.folderName()
             );
-            return result.folderName() + " imported in quarantine. Review it before enabling.";
+            return result.folderName() + " imported and enabled.";
         });
     }
 
@@ -1702,7 +1716,7 @@ public final class MainActivity extends Activity {
         }
         String name = source.getName() == null ? "ImportedMod" : source.getName();
         final String finalName = name;
-        runFileOperation(() -> {
+        runFileOperation("import", finalName, "local", "Installing imported mod…", () -> {
             CatalogInstaller.InstallResult result = CatalogInstaller.installDirectory(
                     this, scan.folder(), source, finalName
             );
@@ -1714,7 +1728,7 @@ public final class MainActivity extends Activity {
                     "",
                     result.folderName()
             );
-            return result.folderName() + " imported in quarantine. Review it before enabling.";
+            return result.folderName() + " imported and enabled.";
         });
     }
 
@@ -1805,24 +1819,16 @@ public final class MainActivity extends Activity {
     }
 
     private void deleteMod(String folder) {
-        runFileOperation(() -> {
+        runFileOperation("delete", folder, "", "Deleting mod…", () -> {
             requireScan();
             ModEntry mod = findMod(folder);
-            String quarantined = ModRepository.quarantine(mod);
-            recordInstallHistory(
-                    "quarantine:" + quarantined,
-                    mod.name + " moved to backup quarantine",
-                    mod.version,
-                    "quarantine",
-                    quarantined,
-                    mod.folderName
-            );
-            return mod.name + " moved to reversible quarantine (" + quarantined + ").";
+            ModRepository.deletePermanently(mod);
+            return mod.name + " was permanently deleted.";
         });
     }
 
     private void deleteMods(JSONArray folders) {
-        runFileOperation(() -> {
+        runFileOperation("delete", "multiple", "", "Deleting selected mods…", () -> {
             requireScan();
             if (folders == null || folders.length() == 0) throw new IllegalArgumentException("Select at least one mod.");
             List<ModEntry> selected = new ArrayList<>();
@@ -1836,61 +1842,12 @@ public final class MainActivity extends Activity {
                     throw new IllegalStateException(mod.name + " is a protected framework. Remove it individually only after explicit review.");
                 }
             }
-            snapshots.create("Before multi-mod quarantine", scan.mods());
-            int moved = 0;
+            int deleted = 0;
             for (ModEntry mod : selected) {
-                String quarantined = ModRepository.quarantine(mod);
-                recordInstallHistory(
-                        "quarantine:" + quarantined,
-                        mod.name + " moved to backup quarantine",
-                        mod.version,
-                        "quarantine",
-                        quarantined,
-                        mod.folderName
-                );
-                moved++;
+                ModRepository.deletePermanently(mod);
+                deleted++;
             }
-            return moved + (moved == 1 ? " mod" : " mods") + " moved to reversible quarantine. Backup saved.";
-        });
-    }
-
-    private void restoreQuarantined(String id) {
-        runFileOperation(() -> {
-            requireScan();
-            JSONObject record = findInstallHistory(id);
-            if (record == null) {
-                throw new IllegalArgumentException("This installation entry cannot be restored.");
-            }
-            DocumentFile quarantine = scan.folder().findFile(record.optString("quarantineName"));
-            if (quarantine == null || !quarantine.exists()) {
-                throw new IllegalStateException("The quarantined mod is no longer available.");
-            }
-            String original = record.optString("originalName");
-            if (original.isBlank() || scan.folder().findFile(original) != null) {
-                if ("update".equals(record.optString("kind"))) {
-                    DocumentFile current = scan.folder().findFile(original);
-                    if (current != null && current.exists()) {
-                        String rollbackTrash = ".bmm-trash--rollback--" + System.currentTimeMillis() + "--" + original;
-                        if (!current.renameTo(rollbackTrash)) {
-                            throw new IllegalStateException("Could not move the current version to reversible quarantine.");
-                        }
-                    }
-                } else {
-                    throw new IllegalStateException("Restore is blocked because the original mod name is already in use.");
-                }
-            }
-            if (!quarantine.renameTo(original)) {
-                throw new IllegalStateException("Android could not restore this mod.");
-            }
-            recordInstallHistory(
-                    "restore:" + original,
-                    record.optString("label", original) + " restored",
-                    record.optString("version"),
-                    "restore",
-                    "",
-                    original
-            );
-            return original + " restored from quarantine.";
+            return deleted + (deleted == 1 ? " mod was" : " mods were") + " permanently deleted.";
         });
     }
 
@@ -1975,13 +1932,20 @@ public final class MainActivity extends Activity {
             pushState();
             return;
         }
-        installCatalogItem(
-                catalogId,
-                catalogSource,
-                false,
-                record.optString("catalogVersion", ""),
-                record.optString("catalogDownloadUrl", "")
-        );
+        try {
+            CatalogItem item = findCatalogItem(catalogId, catalogSource);
+            boolean replaceExisting = findInstalledCatalogMod(item) != null;
+            installCatalogItem(
+                    catalogId,
+                    catalogSource,
+                    replaceExisting,
+                    record.optString("catalogVersion", ""),
+                    record.optString("catalogDownloadUrl", "")
+            );
+        } catch (Exception error) {
+            message = readable(error);
+            pushState();
+        }
     }
 
     private JSONObject findInstallHistory(String id) {
@@ -2232,7 +2196,8 @@ public final class MainActivity extends Activity {
     }
 
     private void installCatalogItem(String id, String source, boolean replaceExisting, String requestedVersion, String requestedDownloadUrl) {
-        runFileOperation(() -> {
+        runFileOperation(replaceExisting ? "update" : "install", id, source,
+                replaceExisting ? "Updating mod…" : "Installing mod…", () -> {
             requireScan();
             CatalogItem item = findCatalogItem(id, source);
             List<String> missingFrameworks = missingFrameworks(item);
@@ -2242,41 +2207,27 @@ public final class MainActivity extends Activity {
                                 + String.join(", ", missingFrameworks)
                 );
             }
-            String oldQuarantine = "";
+            ModEntry existing = null;
             if (replaceExisting) {
-                ModEntry existing = null;
-                for (ModEntry candidate : scan.mods()) {
-                    if (candidate.folderName.equals(item.folderName())) {
-                        existing = candidate;
-                        break;
-                    }
-                }
+                existing = findInstalledCatalogMod(item);
                 if (existing == null) {
-                    throw new IllegalStateException("This mod is not installed yet; use Install first.");
+                    throw new IllegalStateException("The installed copy could not be matched to this catalog entry. Refresh Library and try again.");
                 }
-                oldQuarantine = ModRepository.quarantine(existing);
             }
             String selectedVersion = requestedVersion == null || requestedVersion.isBlank()
                     ? item.version()
                     : requestedVersion;
             String url = catalogClient.resolveDownloadUrl(item, selectedVersion, requestedDownloadUrl);
-            CatalogInstaller.InstallResult result;
-            try {
-                result = CatalogInstaller.install(this, scan.folder(), item, url);
-            } catch (Exception error) {
-                if (!oldQuarantine.isBlank()) {
-                    DocumentFile old = scan.folder().findFile(oldQuarantine);
-                    if (old != null) old.renameTo(item.folderName());
-                }
-                throw error;
-            }
+            CatalogInstaller.InstallResult result = CatalogInstaller.install(
+                    this, scan.folder(), item, url, replaceExisting, existing
+            );
             String historyId = "install:" + result.folderName() + ":" + System.currentTimeMillis();
             recordInstallHistory(
                     historyId,
                     item.name() + (replaceExisting ? " updated" : " installed"),
                     selectedVersion,
                     replaceExisting ? "update" : "install",
-                    oldQuarantine,
+                    "",
                     result.folderName()
             );
             attachCatalogMetadata(historyId, item, selectedVersion, url);
@@ -2284,7 +2235,8 @@ public final class MainActivity extends Activity {
                     ? ""
                     : " " + String.join(" ", result.warnings());
             return item.name()
-                    + " installed in quarantine. Review it in Library, then enable it."
+                    + (replaceExisting ? " updated to " : " installed at ")
+                    + selectedVersion + " and enabled."
                     + warning;
         });
     }
@@ -2311,6 +2263,74 @@ public final class MainActivity extends Activity {
             missing.add("Talisman");
         }
         return missing;
+    }
+
+    private void repairImmVersionParser(String folder) {
+        runFileOperation("repair", folder, "IMM", "Applying IMM mobile compatibility fix…", () -> {
+            ModEntry mod = findMod(folder);
+            String identity = ModRepository.normalizeId(mod.id + " " + mod.name + " " + mod.folderName);
+            if (!identity.contains("imm") && !identity.contains("balatroingamemodmanager")) {
+                throw new IllegalArgumentException("This compatibility fix only applies to IMM.");
+            }
+            DocumentFile versionFile = findImmVersionFile(mod.directory, 0);
+            if (versionFile == null) {
+                throw new IllegalStateException("IMM's imm/lib/version.lua file was not found.");
+            }
+            String source = readBoundedText(versionFile, 256 * 1024);
+            ImmCompatibility.PatchResult patch = ImmCompatibility.patchVersionParser(source);
+            if (!patch.changed()) return "IMM mobile version compatibility is already fixed.";
+
+            File backupDirectory = new File(getFilesDir(), "compat-backups");
+            if (!backupDirectory.exists() && !backupDirectory.mkdirs()) {
+                throw new IllegalStateException("Could not create private compatibility backup storage.");
+            }
+            File backup = new File(
+                    backupDirectory,
+                    mod.folderName.replaceAll("[^A-Za-z0-9._-]", "_") + "-imm-version.lua"
+            );
+            if (!backup.exists()) {
+                try (OutputStream output = new FileOutputStream(backup)) {
+                    output.write(source.getBytes(StandardCharsets.UTF_8));
+                }
+            }
+            try (OutputStream output = getContentResolver().openOutputStream(versionFile.getUri(), "wt")) {
+                if (output == null) throw new IllegalStateException("Android denied write access to IMM.");
+                output.write(patch.content().getBytes(StandardCharsets.UTF_8));
+            }
+            return "IMM fixed for Balatro mobile version strings. Restart Balatro before opening IMM.";
+        });
+    }
+
+    private DocumentFile findImmVersionFile(DocumentFile root, int depth) {
+        if (root == null || depth > 4) return null;
+        DocumentFile directLib = root.findFile("lib");
+        if (directLib != null && directLib.isDirectory()) {
+            DocumentFile directVersion = directLib.findFile("version.lua");
+            if (directVersion != null && directVersion.isFile()) return directVersion;
+        }
+        for (DocumentFile child : root.listFiles()) {
+            if (child.isDirectory()) {
+                DocumentFile found = findImmVersionFile(child, depth + 1);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private String readBoundedText(DocumentFile file, int maxBytes) throws Exception {
+        InputStream raw = getContentResolver().openInputStream(file.getUri());
+        if (raw == null) throw new IllegalStateException("The selected file could not be read.");
+        try (InputStream input = raw; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8_192];
+            int read;
+            int total = 0;
+            while ((read = input.read(buffer)) != -1) {
+                total += read;
+                if (total > maxBytes) throw new IllegalArgumentException("The compatibility file is unexpectedly large.");
+                output.write(buffer, 0, read);
+            }
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     private void launchBalatro() {
@@ -2448,6 +2468,29 @@ public final class MainActivity extends Activity {
     }
 
     private void runFileOperation(CheckedOperation operation) {
+        runFileOperation("", "", "", "", operation);
+    }
+
+    private void runFileOperation(
+            String kind,
+            String itemId,
+            String source,
+            String startLabel,
+            CheckedOperation operation
+    ) {
+        if (!operationKind.isBlank()) {
+            message = "Another mod operation is still running. Wait for it to finish.";
+            pushState();
+            return;
+        }
+        operationKind = kind == null ? "" : kind;
+        operationItemId = itemId == null ? "" : itemId;
+        operationSource = source == null ? "" : source;
+        operationLabel = startLabel == null ? "" : startLabel;
+        if (!operationKind.isBlank()) {
+            message = operationLabel;
+            pushState();
+        }
         io.execute(() -> {
             String resultMessage;
             try {
@@ -2460,10 +2503,18 @@ public final class MainActivity extends Activity {
             }
             final String finalMessage = resultMessage;
             main.post(() -> {
+                clearOperation();
                 message = finalMessage;
                 pushState();
             });
         });
+    }
+
+    private void clearOperation() {
+        operationKind = "";
+        operationItemId = "";
+        operationSource = "";
+        operationLabel = "";
     }
 
     private void pushState() {
@@ -2488,6 +2539,12 @@ public final class MainActivity extends Activity {
             state.put("connected", connected);
             state.put("providerDetected", isProviderAvailable(KNOWN_PROVIDER));
             state.put("loading", loading);
+            state.put("operation", new JSONObject()
+                    .put("active", !operationKind.isBlank())
+                    .put("kind", operationKind)
+                    .put("itemId", operationItemId)
+                    .put("source", operationSource)
+                    .put("label", operationLabel));
             state.put("folder", connected ? scan.folderName() : "");
             state.put("gameFile", steamSourceUploaded ? selectedSteamSourceName : (connected ? "Balatro local copy detected" : ""));
             state.put("steamSourceName", selectedSteamSourceName);
@@ -2511,7 +2568,7 @@ public final class MainActivity extends Activity {
             }
             state.put("canUndo", snapshots.latest() != null);
             state.put("message", message);
-            state.put("version", "2.0.0");
+            state.put("version", BuildConfig.VERSION_NAME);
             state.put("channel", BuildConfig.BMM_CHANNEL);
 
             JSONArray mods = new JSONArray();
@@ -2572,7 +2629,7 @@ public final class MainActivity extends Activity {
         JSONObject report = new JSONObject();
         try {
             report.put("app", "MBM - Mobile Balatro Manager");
-            report.put("version", "2.0.0");
+            report.put("version", BuildConfig.VERSION_NAME);
             report.put("createdAt", System.currentTimeMillis());
             report.put("balatroPackageDetected", isPackageInstalled(KNOWN_BALATRO_PACKAGE));
             report.put("providerDetected", isProviderAvailable(KNOWN_PROVIDER));
@@ -2700,7 +2757,6 @@ public final class MainActivity extends Activity {
                 case "quickRescue" -> quickRescue();
                 case "undo" -> undoLatest();
                 case "restoreSnapshot" -> restoreSnapshot(string(payload, "id"));
-                case "restoreInstall" -> restoreQuarantined(string(payload, "id"));
                 case "reinstallInstall" -> reinstallInstall(string(payload, "id"));
                 case "beginIsolation" -> beginIsolation();
                 case "isolationResult" -> isolationResult(bool(payload, "opened"));
@@ -2721,6 +2777,7 @@ public final class MainActivity extends Activity {
                 );
                 case "importMod" -> importMod();
                 case "importModFolder" -> importModFolder();
+                case "repairImmVersion" -> repairImmVersionParser(string(payload, "folder"));
                 case "importDesktopMods" -> importDesktopMods();
                 case "exportHistory" -> exportReport();
                 case "deleteHistoryEntry" -> deleteHistoryEntry(

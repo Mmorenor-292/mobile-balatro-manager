@@ -152,6 +152,16 @@ public final class CatalogClient {
                 continue;
             }
             JSONObject downloads = item.optJSONObject("downloads");
+            List<CatalogVersion> releases = catalogVersions(item.optJSONArray("versions"));
+            if (releases.isEmpty()) {
+                releases = List.of(new CatalogVersion(
+                        item.optString("version"),
+                        first(item.optString("download_url"), item.optString("downloadURL")),
+                        downloads == null ? 0 : downloads.optLong("total"),
+                        0,
+                        String.valueOf(item.optLong("updated_at"))
+                ));
+            }
             result.add(new CatalogItem(
                     item.optString("id"),
                     "BMI",
@@ -169,13 +179,7 @@ public final class CatalogClient {
                     item.optBoolean("requires_talisman"),
                     downloads == null ? 0 : downloads.optLong("total"),
                     0,
-                    List.of(new CatalogVersion(
-                            item.optString("version"),
-                            first(item.optString("download_url"), item.optString("downloadURL")),
-                            downloads == null ? 0 : downloads.optLong("total"),
-                            0,
-                            String.valueOf(item.optLong("updated_at"))
-                    ))
+                    releases
             ));
         }
         return result;
@@ -255,16 +259,22 @@ public final class CatalogClient {
                         ? repository.substring(0, repository.indexOf('/'))
                         : metadata.optJSONObject("owner").optString("login");
                 String branch = first(metadata.optString("default_branch"), "main");
-                String releaseUrl = githubReleaseAsset(repository);
-                if (releaseUrl.isBlank()) {
-                    releaseUrl = githubSourceArchive(repository, branch);
+                List<CatalogVersion> releases = githubReleases(repository);
+                String releaseUrl = releases.isEmpty()
+                        ? githubSourceArchive(repository, branch)
+                        : releases.get(0).downloadUrl();
+                String latestVersion = releases.isEmpty() ? branch : releases.get(0).version();
+                if (releases.isEmpty()) {
+                    releases = List.of(new CatalogVersion(
+                            branch, releaseUrl, metadata.optLong("stargazers_count"), 0, ""
+                    ));
                 }
                 result.add(new CatalogItem(
                         "awesome:" + repository,
                         "Awesome Balatro",
                         name,
                         owner,
-                        branch,
+                        latestVersion,
                         stripMarkdown(first(metadata.optString("description"), "A real GitHub repository from the Awesome Balatro collection. MBM downloads its release or source archive and inspects it before installation.")),
                         releaseUrl,
                         first(metadata.optString("html_url"), "https://github.com/" + repository),
@@ -276,11 +286,7 @@ public final class CatalogClient {
                         false,
                         metadata.optLong("stargazers_count"),
                         0,
-                        releaseUrl.isBlank()
-                                ? List.of(new CatalogVersion(
-                                branch, "", metadata.optLong("stargazers_count"), 0, ""))
-                                : List.of(new CatalogVersion(
-                                branch, releaseUrl, metadata.optLong("stargazers_count"), 0, ""))
+                        releases
                 ));
             } catch (Exception ignored) {
                 // A stale or rate-limited link must not make the whole catalog fail.
@@ -289,26 +295,42 @@ public final class CatalogClient {
         return result;
     }
 
-    private String githubReleaseAsset(String repository) {
+    private List<CatalogVersion> githubReleases(String repository) {
         try {
-            JSONObject release = new JSONObject(get(GITHUB_API + repository + "/releases/latest"));
-            JSONArray assets = release.optJSONArray("assets");
-            if (assets == null) {
-                return "";
-            }
-            for (int i = 0; i < assets.length(); i++) {
-                JSONObject asset = assets.optJSONObject(i);
-                if (asset == null) continue;
-                String name = asset.optString("name").toLowerCase(Locale.ROOT);
-                String url = asset.optString("browser_download_url");
-                if ((name.endsWith(".zip") || name.endsWith(".tar.gz")) && !url.isBlank()) {
-                    return url;
+            JSONArray releases = new JSONArray(get(GITHUB_API + repository + "/releases?per_page=10"));
+            List<CatalogVersion> result = new ArrayList<>();
+            for (int releaseIndex = 0; releaseIndex < releases.length(); releaseIndex++) {
+                JSONObject release = releases.optJSONObject(releaseIndex);
+                if (release == null || release.optBoolean("draft") || release.optBoolean("prerelease")) continue;
+                String version = first(release.optString("tag_name"), release.optString("name"));
+                String url = "";
+                long downloads = 0;
+                long size = 0;
+                JSONArray assets = release.optJSONArray("assets");
+                if (assets != null) {
+                    for (int assetIndex = 0; assetIndex < assets.length(); assetIndex++) {
+                        JSONObject asset = assets.optJSONObject(assetIndex);
+                        if (asset == null) continue;
+                        String name = asset.optString("name").toLowerCase(Locale.ROOT);
+                        if (url.isBlank() && name.endsWith(".zip")) {
+                            url = asset.optString("browser_download_url");
+                            size = asset.optLong("size");
+                        }
+                        downloads += asset.optLong("download_count");
+                    }
+                }
+                if (url.isBlank()) url = release.optString("zipball_url");
+                if (!version.isBlank() && !url.isBlank()) {
+                    result.add(new CatalogVersion(
+                            version, url, downloads, size, release.optString("published_at")
+                    ));
                 }
             }
+            return List.copyOf(result);
         } catch (Exception ignored) {
             // The caller falls back to the repository source archive.
         }
-        return "";
+        return List.of();
     }
 
     private String githubSourceArchive(String repository, String branch) {

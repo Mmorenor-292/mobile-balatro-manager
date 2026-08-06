@@ -937,6 +937,13 @@ button:disabled { cursor: not-allowed; }
 .catalog-update-available { border-color: var(--gold) !important; color: var(--gold) !important; }
 .catalog-version-picker { display: grid; gap: .25rem; margin-top: .55rem; color: var(--muted); font: 800 .62rem var(--display); letter-spacing: .04em; text-transform: uppercase; }
 .catalog-version-picker select { min-height: 2.35rem; padding: 0 .6rem; border: 1px solid #596359; background: #0b1b14; color: var(--cream); }
+.installed-version-tools { display: grid; gap: .42rem; margin-top: .55rem; padding: .55rem; border: 1px solid #405d4d; background: rgb(4 20 13 / .7); }
+.version-update-button { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 2.35rem; border: 1px solid var(--blue); background: #10233b; color: var(--blue); font: 900 .62rem var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.version-update-button:disabled { opacity: .62; }
+.version-update-button svg, .install-button svg, .installed-button svg { width: 1rem; }
+.catalog-unmatched { color: var(--gold); }
+.detail-actions .danger-action { border-color: #984440; color: var(--red); }
+.spin { animation: spin .8s linear infinite; }
 .field-label input{min-height:2.7rem;padding:0 .7rem;border:1px solid #596359;background:#0b1b14;color:var(--cream)}
 .source-actions{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.source-actions .secondary-button{flex:1 1 190px}
 .mod-details{grid-column:1 / -1;margin-top:.45rem;padding:.55rem;border-top:1px solid #394b40;color:var(--muted);font-size:.7rem;line-height:1.35}.mod-details p{margin:.25rem 0}.detail-actions{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.45rem}.detail-actions button{border:1px solid #53655a;background:#0b1c13;color:var(--cream);padding:.4rem .5rem;font:800 .58rem var(--display);text-transform:uppercase}.history-actions{display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end}.history-actions button{border:1px solid #53655a;background:#0b1c13;color:var(--cream);padding:.35rem .45rem;font:800 .56rem var(--display);text-transform:uppercase}.history-actions button:last-child{color:#f4bc55}

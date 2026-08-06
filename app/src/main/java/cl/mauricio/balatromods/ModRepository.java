@@ -53,7 +53,12 @@ public final class ModRepository {
                 continue;
             }
             String folderName = safe(child.getName());
-            if (folderName.startsWith(".bmm-trash--")) {
+            if (folderName.startsWith(".bmm-trash--") || folderName.startsWith(".bmm-incoming--")) {
+                try {
+                    deleteDocumentTree(child);
+                } catch (Exception error) {
+                    scanErrors.add(folderName + ": could not remove legacy manager storage: " + readable(error));
+                }
                 continue;
             }
             try {
@@ -113,10 +118,6 @@ public final class ModRepository {
             diagnostics.add("Empty mod folder");
             severity = "error";
         }
-        if (diagnostics.isEmpty()) {
-            diagnostics.add(marker != null && marker.exists() ? "Hidden" : "No issues detected");
-        }
-
         return new ModEntry(
                 parsed.id(),
                 parsed.name(),
@@ -264,24 +265,28 @@ public final class ModRepository {
         }
     }
 
-    /**
-     * Reversible delete: rename the mod out of the live Mods namespace instead
-     * of deleting its files. The original name is kept in the quarantine name.
-     */
-    public static String quarantine(ModEntry mod) throws Exception {
-        if (mod.directory == null || !mod.directory.exists()) {
+    public static void deletePermanently(ModEntry mod) throws Exception {
+        if (mod == null || mod.directory == null || !mod.directory.exists()) {
             throw new IllegalStateException("The mod folder is no longer available.");
         }
         if (isEssential(mod)) {
             throw new IllegalStateException(
-                    "Steamodded/Lovely are protected. Disable them or confirm an explicit framework removal first."
+                    "Steamodded/Lovely are protected. Disable them instead of deleting the framework."
             );
         }
-        String safeName = ".bmm-trash--" + System.currentTimeMillis() + "--" + mod.folderName;
-        if (!mod.directory.renameTo(safeName)) {
-            throw new IllegalStateException("Android could not move this mod to reversible quarantine.");
+        deleteDocumentTree(mod.directory);
+    }
+
+    static void deleteDocumentTree(DocumentFile root) throws Exception {
+        if (root == null || !root.exists()) return;
+        if (root.isDirectory()) {
+            for (DocumentFile child : safeListFiles(root)) {
+                deleteDocumentTree(child);
+            }
         }
-        return safeName;
+        if (root.exists() && !root.delete()) {
+            throw new IllegalStateException("Android could not permanently delete " + safe(root.getName()) + ".");
+        }
     }
 
     public static void applyStates(

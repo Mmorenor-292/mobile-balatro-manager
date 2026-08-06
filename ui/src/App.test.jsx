@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "./App";
@@ -62,7 +62,8 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     const card = screen.getByText("Bunco").closest("article");
     expect(within(card).getByRole("button", { name: "Install" })).toBeEnabled();
     await user.click(within(card).getByRole("button", { name: "Install" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(/installed in quarantine/i);
+    expect(within(card).getByRole("button", { name: /Installing/ })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/installed at main and enabled/i));
   });
 
   it("shows installed and latest versions and lets the user choose a release", async () => {
@@ -71,14 +72,18 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Discover" }));
     expect(screen.getAllByText("Installed:").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Latest:").length).toBeGreaterThan(0);
+    const handyCard = screen.getByText("Handy").closest("article");
     const versionPicker = screen.getByRole("combobox", { name: "Version for Handy" });
     expect(versionPicker).toHaveValue("1.6.0");
     await user.selectOptions(versionPicker, "1.5.2");
     expect(versionPicker).toHaveValue("1.5.2");
-    const update = screen.getByRole("button", { name: "Update" });
+    expect(within(handyCard).getByRole("button", { name: "Reinstall" })).toBeEnabled();
+    await user.selectOptions(versionPicker, "1.6.0");
+    const update = within(handyCard).getByRole("button", { name: "Update" });
     expect(update).not.toBeDisabled();
     await user.click(update);
-    expect(await screen.findByRole("status")).toHaveTextContent(/updated in quarantine/i);
+    expect(within(handyCard).getByRole("button", { name: /Updating/ })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/updated to 1.6.0 and enabled/i));
   });
 
   it("uses the four explicit save choices", async () => {
@@ -91,7 +96,7 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     expect(screen.getByText("Review files first")).toBeInTheDocument();
   });
 
-  it("supports selecting multiple mods for one reversible action", async () => {
+  it("supports selecting multiple mods for one explicit action", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Mods" }));

@@ -44,16 +44,38 @@ public final class CatalogInstaller {
             CatalogItem item,
             String resolvedUrl
     ) throws Exception {
+        return install(context, modsFolder, item, resolvedUrl, false);
+    }
+
+    public static InstallResult install(
+            Context context,
+            DocumentFile modsFolder,
+            CatalogItem item,
+            String resolvedUrl,
+            boolean replaceExisting
+    ) throws Exception {
+        return install(context, modsFolder, item, resolvedUrl, replaceExisting, null);
+    }
+
+    public static InstallResult install(
+            Context context,
+            DocumentFile modsFolder,
+            CatalogItem item,
+            String resolvedUrl,
+            boolean replaceExisting,
+            ModEntry replacing
+    ) throws Exception {
         if (modsFolder == null || !modsFolder.isDirectory() || !modsFolder.canWrite()) {
             throw new IllegalStateException("The Mods folder is not writable.");
         }
         validateUrl(resolvedUrl);
-        String folderName = sanitizeFolderName(
-                item.folderName().isBlank() ? item.name() : item.folderName()
-        );
-        if (modsFolder.findFile(folderName) != null) {
+        String folderName = replacing == null
+                ? sanitizeFolderName(item.folderName().isBlank() ? item.name() : item.folderName())
+                : replacing.folderName;
+        DocumentFile existing = replacing == null ? modsFolder.findFile(folderName) : replacing.directory;
+        if (existing != null && !replaceExisting) {
             throw new IllegalStateException(
-                    folderName + " is already installed. Remove or rename it before reinstalling."
+                    folderName + " is already installed. Choose Update or another version instead."
             );
         }
 
@@ -63,6 +85,7 @@ public final class CatalogInstaller {
         );
         File archive = new File(operationRoot, "download.zip");
         File extracted = new File(operationRoot, "extracted");
+        File previous = new File(operationRoot, "previous");
         if (!extracted.mkdirs()) {
             throw new IllegalStateException("Could not create secure staging storage.");
         }
@@ -71,15 +94,43 @@ public final class CatalogInstaller {
             DownloadInfo download = download(resolvedUrl, archive);
             ArchiveInspection inspection = extractAndInspect(archive, extracted);
             File contentRoot = chooseContentRoot(extracted);
-            DocumentFile target = modsFolder.createDirectory(folderName);
-            if (target == null) {
-                throw new IllegalStateException("Could not create " + folderName + " in Mods.");
+            if (existing != null) {
+                if (!previous.mkdirs()) {
+                    throw new IllegalStateException("Could not create rollback storage for the current mod.");
+                }
+                int[] backupEntries = {0};
+                long[] backupBytes = {0};
+                copyDocumentTreeToLocal(context, existing, previous, backupEntries, backupBytes, false);
             }
+            DocumentFile target = null;
+            boolean replacementStarted = false;
             try {
+                if (existing != null) {
+                    replacementStarted = true;
+                    ModRepository.deleteDocumentTree(existing);
+                }
+                target = modsFolder.createDirectory(folderName);
+                if (target == null) {
+                    throw new IllegalStateException("Could not create " + folderName + " in Mods.");
+                }
                 copyDirectory(context, contentRoot, target);
-                createQuarantineMarker(context, target);
+                removeRootIgnore(target);
             } catch (Exception error) {
-                target.delete();
+                try {
+                    if (target != null) {
+                        ModRepository.deleteDocumentTree(target);
+                    } else {
+                        DocumentFile partial = modsFolder.findFile(folderName);
+                        if (partial != null) ModRepository.deleteDocumentTree(partial);
+                    }
+                    if (replacementStarted && previous.exists()) {
+                        DocumentFile restored = modsFolder.createDirectory(folderName);
+                        if (restored == null) throw new IllegalStateException("Could not restore the previous version.");
+                        copyDirectory(context, previous, restored);
+                    }
+                } catch (Exception restoreError) {
+                    error.addSuppressed(restoreError);
+                }
                 throw error;
             }
             return new InstallResult(
@@ -174,12 +225,19 @@ public final class CatalogInstaller {
         }
         try {
             copyDirectory(context, contentRoot, target);
-            createQuarantineMarker(context, target);
+            removeRootIgnore(target);
         } catch (Exception error) {
-            target.delete();
+            ModRepository.deleteDocumentTree(target);
             throw error;
         }
         return new InstallResult(folderName, 0, inspection.entries(), inspection.hasLua(), inspection.warnings());
+    }
+
+    private static void removeRootIgnore(DocumentFile target) throws Exception {
+        DocumentFile marker = target.findFile(".lovelyignore");
+        if (marker != null && marker.exists() && !marker.delete()) {
+            throw new IllegalStateException("The installed mod could not be enabled.");
+        }
     }
 
     private static void copyUriToFile(Context context, Uri uri, File destination, long maxBytes) throws Exception {
@@ -206,20 +264,33 @@ public final class CatalogInstaller {
             int[] entries,
             long[] bytes
     ) throws Exception {
+        copyDocumentTreeToLocal(context, source, destination, entries, bytes, true);
+    }
+
+    private static void copyDocumentTreeToLocal(
+            Context context,
+            DocumentFile source,
+            File destination,
+            int[] entries,
+            long[] bytes,
+            boolean inspectCompatibility
+    ) throws Exception {
         for (DocumentFile child : source.listFiles()) {
             String name = sanitizeFileName(child.getName());
             if (name.isBlank() || name.equals(".") || name.equals("..")) continue;
             if (child.isDirectory()) {
                 File nested = new File(destination, name);
                 if (!nested.mkdirs()) throw new IllegalStateException("Could not stage " + name);
-                copyDocumentTreeToLocal(context, child, nested, entries, bytes);
+                copyDocumentTreeToLocal(context, child, nested, entries, bytes, inspectCompatibility);
                 continue;
             }
             entries[0]++;
             if (entries[0] > MAX_ENTRIES) throw new IllegalArgumentException("Folder has too many files.");
             String lower = name.toLowerCase(Locale.ROOT);
-            for (String extension : BLOCKED_EXTENSIONS) {
-                if (lower.endsWith(extension)) throw new IllegalArgumentException("Blocked mobile-incompatible file: " + name);
+            if (inspectCompatibility) {
+                for (String extension : BLOCKED_EXTENSIONS) {
+                    if (lower.endsWith(extension)) throw new IllegalArgumentException("Blocked mobile-incompatible file: " + name);
+                }
             }
             File target = new File(destination, name);
             InputStream raw = context.getContentResolver().openInputStream(child.getUri());
@@ -421,33 +492,6 @@ public final class CatalogInstaller {
                     }
                 }
             }
-        }
-    }
-
-    private static void createQuarantineMarker(
-            Context context,
-            DocumentFile destination
-    ) throws Exception {
-        DocumentFile marker = destination.createFile(
-                "application/octet-stream",
-                ".lovelyignore"
-        );
-        if (marker == null) {
-            throw new IllegalStateException(
-                    "Could not quarantine the newly installed mod."
-            );
-        }
-        try (OutputStream output = context.getContentResolver().openOutputStream(
-                marker.getUri(),
-                "wt"
-        )) {
-            if (output == null) {
-                throw new IllegalStateException(
-                        "The provider denied the quarantine marker."
-                );
-            }
-            output.write("Installed by MBM - Mobile Balatro Manager; review before enabling.\n"
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
     }
 
