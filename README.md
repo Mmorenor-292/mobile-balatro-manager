@@ -1,4 +1,4 @@
-# MBM - Mobile Balatro Manager · Public vNext checkpoint
+# MBM - Mobile Balatro Manager 2.0.2
 
 An independent Android manager for Balatro Modded. It remains available even when a
 broken mod prevents the game from starting, and now exposes separate Steam/local,
@@ -9,6 +9,8 @@ Native preflight, Saves, split History, Discover, Settings and Help surfaces.
 1. Build the Android app from source, then install the APK on a test device.
 2. Open **Steam copy** for the local desktop wizard or **Native Android** for preflight.
 3. Use **Mods** to import, enable, disable, update or permanently delete a mod.
+   **Update all** upgrades every catalog-matched mod with a newer release, while
+   **Clean junk** permanently removes only known manager leftovers and OS metadata.
 4. Use **Saves** to choose whether progress is imported and **History** to restore backups
    or review installations.
 
@@ -18,8 +20,22 @@ the source exposes release history, the user can update, downgrade or reinstall 
 deleting the current copy first. The app never executes Lua code.
 
 Deleting a mod is irreversible and removes its folder instead of renaming it inside `Mods`.
-Legacy `.bmm-trash--*` folders created by older manager builds are removed during the next
-scan so Balatro cannot mistake them for installed mods.
+Legacy `.bmm-trash--*` folders are counted as junk and removed only when the user
+presses **Clean junk** and confirms. Real mod folders, inactive mods and backups are
+never included in this cleanup.
+
+## Balatro AI Assistant
+
+The repository also includes a separate Android APK for guided crash analysis,
+compatibility repair proposals and Steamodded mod scaffolding. It pairs over the
+local network with **BMM Helper 0.5.0**, which invokes the user's already signed-in
+Codex CLI with `gpt-5.6-terra` and high reasoning. ChatGPT/Codex OAuth credentials
+never enter the APK and are never copied over the network.
+
+The assistant treats logs and mod archives as untrusted data, rejects executable
+payloads, works only on a staging copy, and requires the user to review and export
+any proposed ZIP. It never silently edits the original Mods folder or game saves.
+See [docs/BALATRO-AI-ASSISTANT.md](docs/BALATRO-AI-ASSISTANT.md).
 
 If an earlier debug build of this manager is installed, Android may require you to
 uninstall that manager once because its signing key differs. Do not uninstall Balatro.
@@ -44,7 +60,7 @@ npm run lint
 npm run build
 cd ..
 $env:BALATRO_SIGNING_PROPERTIES='C:\private\path\signing.properties'
-gradle testDebugUnitTest lintDebug assembleRelease
+gradle :app:testDebugUnitTest :app:lintDebug :app:assembleRelease :assistant:lintDebug :assistant:assembleRelease
 ```
 
 The signing properties file must define `storeFile`, `storePassword`, `keyAlias`, and

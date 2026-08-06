@@ -10,6 +10,8 @@ const mockState = {
   channel: "beta",
   canUndo: true,
   counts: { active: 12, hidden: 6, problems: 2 },
+  junkCount: 3,
+  updatesAvailable: 1,
   mods: [
     { folder: "smods-1.0.0", name: "Steamodded", version: "1.0.0", hidden: false, severity: "ok", diagnostics: ["Required framework"], dependencies: [] },
     { folder: "HandyBalatro", name: "Handy", version: "1.5.2", hidden: false, severity: "info", diagnostics: ["Depends on Steamodded"], dependencies: ["Steamodded"] },
@@ -216,6 +218,15 @@ export function invoke(method, payload = {}) {
     emitMock({ message: "Choose a ZIP or folder from device storage." });
   } else if (method === "importModFolder") {
     emitMock({ message: "Choose a mod folder from device storage." });
+  } else if (method === "cleanAllJunk") {
+    emitMock({ operation: { active: true, kind: "cleanup", itemId: "all", source: "local", label: "Cleaning known junk…" }, message: "Cleaning known junk…" });
+    setTimeout(() => emitMock({ junkCount: 0, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: "3 junk items were permanently removed. Mods and backups were left untouched." }), 450);
+  } else if (method === "updateAllMods") {
+    emitMock({ operation: { active: true, kind: "update-all", itemId: "Handy", source: "Thunderstore", label: "Updating 1 of 1: Handy…" }, message: "Preparing all updates…" });
+    setTimeout(() => {
+      const catalog = state.catalog.map((item) => item.updateAvailable ? { ...item, installedVersion: item.latestVersion || item.version, updateAvailable: false } : item);
+      emitMock({ catalog, updatesAvailable: 0, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: "1 mod was updated successfully." });
+    }, 550);
   } else if (method === "chooseSaveFolder") {
     emitMock({ saveFolder: "Connected save folder", saveFileCount: 2, saveProfiles: ["Root folder", "Profile 1"], message: "Save folder connected" });
   } else if (method === "chooseSaveTarget") {

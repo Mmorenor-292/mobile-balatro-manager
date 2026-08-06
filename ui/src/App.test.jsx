@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 describe("MBM - Mobile Balatro Manager public vNext", () => {
@@ -105,6 +105,27 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     await user.click(selectors[1]);
     expect(screen.getByText("2 selected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete selected" })).toBeInTheDocument();
+  });
+
+  it("updates every catalog-matched mod with visible progress", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Mods" }));
+    const updateAll = screen.getByRole("button", { name: /Update all/ });
+    await user.click(updateAll);
+    expect(screen.getByRole("button", { name: /Updating 1 of 1/ })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/1 mod was updated successfully/i));
+  });
+
+  it("cleans only known junk after an explicit confirmation", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Mods" }));
+    await user.click(screen.getByRole("button", { name: /Clean junk/ }));
+    expect(screen.getByRole("button", { name: /Cleaning/ })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/junk items were permanently removed/i));
   });
 
   it("exposes local-only diagnostics and bounded history retention controls", async () => {

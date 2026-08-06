@@ -74,7 +74,7 @@ public record CatalogItem(
             String current = installedVersion == null ? "" : installedVersion.trim();
             json.put("installedVersion", current);
             json.put("latestVersion", version);
-            json.put("updateAvailable", installed && !current.isBlank() && !sameVersion(current, version));
+            json.put("updateAvailable", installed && VersionOrder.isNewer(version, current));
             JSONArray releaseVersions = new JSONArray();
             if (versions != null && !versions.isEmpty()) {
                 for (CatalogVersion release : versions) releaseVersions.put(release.toJson());
@@ -89,7 +89,4 @@ public record CatalogItem(
         return json;
     }
 
-    private static boolean sameVersion(String left, String right) {
-        return left.trim().equalsIgnoreCase(right == null ? "" : right.trim());
-    }
 }

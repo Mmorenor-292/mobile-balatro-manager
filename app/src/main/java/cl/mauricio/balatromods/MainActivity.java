@@ -51,6 +51,7 @@ import java.security.MessageDigest;
 import java.security.cert.Certificate;
 import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1851,6 +1852,42 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void cleanAllJunk() {
+        runFileOperation("cleanup", "all", "local", "Cleaning known junk…", () -> {
+            requireScan();
+            ModRepository.CleanupReport report = ModRepository.cleanKnownJunk(scan.folder());
+            int privateItems = clearPrivateTemporaryItems();
+            int total = report.removed() + privateItems;
+            if (total == 0) {
+                return "No known junk was found. Mods and backups were left untouched.";
+            }
+            return total + (total == 1 ? " junk item was" : " junk items were")
+                    + " permanently removed. Mods and backups were left untouched.";
+        });
+    }
+
+    private int clearPrivateTemporaryItems() {
+        File[] children = getCacheDir().listFiles();
+        if (children == null) return 0;
+        int removed = 0;
+        for (File child : children) {
+            String name = child.getName().toLowerCase(Locale.ROOT);
+            boolean known = name.startsWith("install-")
+                    || name.startsWith("import-")
+                    || name.startsWith("import-folder-")
+                    || name.startsWith("desktop-mods-import-")
+                    || name.startsWith("desktop-balatro-mods")
+                    || name.startsWith("desktop-balatro-saves")
+                    || name.startsWith("bmm-steam-source-")
+                    || name.startsWith("native-preflight-");
+            if (!known) continue;
+            if (child.isDirectory()) deleteLocalTree(child);
+            else child.delete();
+            if (!child.exists()) removed++;
+        }
+        return removed;
+    }
+
     private void recordInstallHistory(
             String id,
             String label,
@@ -2193,6 +2230,69 @@ public final class MainActivity extends Activity {
 
     private void updateCatalogItem(String id, String source, String version, String downloadUrl) {
         installCatalogItem(id, source, true, version, downloadUrl);
+    }
+
+    private void updateAllCatalogMods() {
+        runFileOperation("update-all", "multiple", "catalog", "Preparing all updates…", () -> {
+            requireScan();
+            List<CatalogItem> updates = availableCatalogUpdates();
+            if (updates.isEmpty()) return "All catalog-matched mods are already up to date.";
+            updates.sort(Comparator
+                    .comparingInt(MainActivity::catalogUpdatePriority)
+                    .thenComparing(CatalogItem::name, String.CASE_INSENSITIVE_ORDER));
+            int updated = 0;
+            List<String> failures = new ArrayList<>();
+            for (int index = 0; index < updates.size(); index++) {
+                CatalogItem item = updates.get(index);
+                operationItemId = item.id();
+                operationSource = item.source();
+                operationLabel = "Updating " + (index + 1) + " of " + updates.size() + ": " + item.name() + "…";
+                main.post(this::pushState);
+                try {
+                    ModEntry existing = findInstalledCatalogMod(item);
+                    if (existing == null) throw new IllegalStateException("installed copy no longer matches");
+                    List<String> missing = missingFrameworks(item);
+                    if (!missing.isEmpty()) throw new IllegalStateException("missing " + String.join(", ", missing));
+                    String selectedVersion = item.version();
+                    String url = catalogClient.resolveDownloadUrl(item, selectedVersion, "");
+                    CatalogInstaller.InstallResult result = CatalogInstaller.install(
+                            this, scan.folder(), item, url, true, existing
+                    );
+                    String historyId = "install:" + result.folderName() + ":" + System.currentTimeMillis();
+                    recordInstallHistory(historyId, item.name() + " updated", selectedVersion,
+                            "update", "", result.folderName());
+                    attachCatalogMetadata(historyId, item, selectedVersion, url);
+                    updated++;
+                    scan = ModRepository.scan(this, selectedTreeUri);
+                } catch (Exception error) {
+                    failures.add(item.name() + ": " + readable(error));
+                    if (selectedTreeUri != null) scan = ModRepository.scan(this, selectedTreeUri);
+                }
+            }
+            if (failures.isEmpty()) {
+                return updated + (updated == 1 ? " mod was" : " mods were") + " updated successfully.";
+            }
+            return updated + " updated; " + failures.size() + " failed. " + String.join(" | ", failures);
+        });
+    }
+
+    private List<CatalogItem> availableCatalogUpdates() {
+        List<CatalogItem> updates = new ArrayList<>();
+        if (scan == null) return updates;
+        for (CatalogItem item : catalog) {
+            ModEntry installed = findInstalledCatalogMod(item);
+            if (installed == null || installed.version == null || installed.version.isBlank()
+                    || item.version() == null || item.version().isBlank()) continue;
+            if (VersionOrder.isNewer(item.version(), installed.version)) updates.add(item);
+        }
+        return updates;
+    }
+
+    private static int catalogUpdatePriority(CatalogItem item) {
+        String identity = ModRepository.normalizeId(item.id() + " " + item.name() + " " + item.folderName());
+        if (identity.contains("steamodded") || identity.contains("lovely")) return 0;
+        if (identity.contains("talisman")) return 1;
+        return 2;
     }
 
     private void installCatalogItem(String id, String source, boolean replaceExisting, String requestedVersion, String requestedDownloadUrl) {
@@ -2590,6 +2690,8 @@ public final class MainActivity extends Activity {
                     .put("active", active)
                     .put("hidden", hidden)
                     .put("problems", problems));
+            state.put("junkCount", scan == null ? 0 : scan.junkNames().size());
+            state.put("updatesAvailable", availableCatalogUpdates().size());
             state.put("recovery", recovery.toJson());
 
             JSONArray history = new JSONArray();
@@ -2749,6 +2851,8 @@ public final class MainActivity extends Activity {
                 case "toggleMods" -> toggleMods(payload.optJSONArray("folders"), bool(payload, "hidden"));
                 case "deleteMod" -> deleteMod(string(payload, "folder"));
                 case "deleteMods" -> deleteMods(payload.optJSONArray("folders"));
+                case "cleanAllJunk" -> cleanAllJunk();
+                case "updateAllMods" -> updateAllCatalogMods();
                 case "saveSnapshot" -> runFileOperation(() -> {
                     requireScan();
                     snapshots.create("Manual backup", scan.mods());

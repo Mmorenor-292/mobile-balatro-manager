@@ -43,6 +43,7 @@ public final class ModRepository {
 
         List<ModEntry> mods = new ArrayList<>();
         List<String> scanErrors = new ArrayList<>();
+        List<String> junkNames = new ArrayList<>();
         DocumentFile[] children = safeListFiles(modsFolder);
         Arrays.sort(children, Comparator.comparing(
                 file -> safe(file.getName()).toLowerCase(Locale.ROOT)
@@ -53,12 +54,8 @@ public final class ModRepository {
                 continue;
             }
             String folderName = safe(child.getName());
-            if (folderName.startsWith(".bmm-trash--") || folderName.startsWith(".bmm-incoming--")) {
-                try {
-                    deleteDocumentTree(child);
-                } catch (Exception error) {
-                    scanErrors.add(folderName + ": could not remove legacy manager storage: " + readable(error));
-                }
+            if (isKnownJunkName(folderName, true)) {
+                junkNames.add(folderName);
                 continue;
             }
             try {
@@ -86,14 +83,65 @@ public final class ModRepository {
             }
         }
 
+        for (DocumentFile child : children) {
+            if (!child.isFile()) continue;
+            String name = safe(child.getName());
+            if (isKnownJunkName(name, false)) junkNames.add(name);
+        }
+
         applyCrossModDiagnostics(mods);
         return new ScanResult(
                 safe(modsFolder.getName()),
                 modsFolder.getUri(),
                 modsFolder,
                 List.copyOf(mods),
-                List.copyOf(scanErrors)
+                List.copyOf(scanErrors),
+                List.copyOf(junkNames)
         );
+    }
+
+    /**
+     * Permanently removes only manager residues and OS metadata that are safe
+     * to classify without guessing. Real mod folders, disabled mods and user
+     * backups are never included.
+     */
+    public static CleanupReport cleanKnownJunk(DocumentFile modsFolder) throws Exception {
+        if (modsFolder == null || !modsFolder.exists() || !modsFolder.isDirectory()) {
+            throw new IllegalStateException("The Mods folder is no longer available.");
+        }
+        List<String> removed = new ArrayList<>();
+        List<String> failures = new ArrayList<>();
+        for (DocumentFile child : safeListFiles(modsFolder)) {
+            String name = safe(child.getName());
+            if (!isKnownJunkName(name, child.isDirectory())) continue;
+            try {
+                deleteDocumentTree(child);
+                removed.add(name);
+            } catch (Exception error) {
+                failures.add(name + ": " + readable(error));
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException("Some junk could not be removed: " + String.join("; ", failures));
+        }
+        return new CleanupReport(removed.size(), List.copyOf(removed));
+    }
+
+    static boolean isKnownJunkName(String rawName, boolean directory) {
+        String name = safe(rawName).toLowerCase(Locale.ROOT);
+        if (directory) {
+            return name.startsWith(".bmm-trash--")
+                    || name.startsWith(".bmm-incoming--")
+                    || name.startsWith(".bmm-staging--")
+                    || name.startsWith(".mbm-trash--")
+                    || name.startsWith(".mbm-incoming--")
+                    || name.equals("__macosx");
+        }
+        return name.equals(".ds_store")
+                || name.equals("thumbs.db")
+                || name.equals("desktop.ini")
+                || ((name.startsWith(".bmm-") || name.startsWith(".mbm-"))
+                    && (name.endsWith(".tmp") || name.endsWith(".part")));
     }
 
     private static ModEntry scanMod(Context context, DocumentFile child, String folderName)
@@ -430,7 +478,11 @@ public final class ModRepository {
             Uri folderUri,
             DocumentFile folder,
             List<ModEntry> mods,
-            List<String> scanErrors
+            List<String> scanErrors,
+            List<String> junkNames
     ) {
+    }
+
+    public record CleanupReport(int removed, List<String> names) {
     }
 }
