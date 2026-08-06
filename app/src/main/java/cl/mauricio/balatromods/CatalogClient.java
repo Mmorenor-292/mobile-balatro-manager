@@ -13,6 +13,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -31,6 +33,22 @@ public final class CatalogClient {
     private static final String AWESOME_BALATRO =
             "https://raw.githubusercontent.com/jie65535/awesome-balatro/main/README.md";
     private static final String GITHUB_API = "https://api.github.com/repos/";
+    private static final Pattern RELEASE_FEED_ENTRY = Pattern.compile(
+            "<entry(?:\\s[^>]*)?>(.*?)</entry>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+    );
+    private static final Pattern RELEASE_FEED_TAG = Pattern.compile(
+            "href\\s*=\\s*[\"']https://github\\.com/[^\"']+/releases/tag/([^\"'#?]+)[\"']",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern RELEASE_FEED_UPDATED = Pattern.compile(
+            "<updated>([^<]+)</updated>",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern RELEASE_ASSET_ZIP = Pattern.compile(
+            "href\\s*=\\s*[\"']([^\"']+\\.zip(?:\\?[^\"']*)?)[\"']",
+            Pattern.CASE_INSENSITIVE
+    );
     private static final Pattern README_LINK = Pattern.compile(
             "\\[[^]]{2,120}\\]\\(https://github\\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:/[^)]*)?\\)",
             Pattern.CASE_INSENSITIVE
@@ -41,7 +59,7 @@ public final class CatalogClient {
     private final File cache;
 
     public CatalogClient(Context context) {
-        cache = new File(context.getFilesDir(), "catalog-v2.json");
+        cache = new File(context.getFilesDir(), "catalog-v3.json");
     }
 
     public List<CatalogItem> fetch() throws Exception {
@@ -89,13 +107,17 @@ public final class CatalogClient {
         return loadCache();
     }
 
+    public void persist(List<CatalogItem> items) {
+        if (items != null && !items.isEmpty()) saveCache(items);
+    }
+
     public String resolveDownloadUrl(CatalogItem item) throws Exception {
         return resolveDownloadUrl(item, "", "");
     }
 
     public String resolveDownloadUrl(CatalogItem item, String requestedVersion, String requestedUrl) throws Exception {
         if (requestedUrl != null && !requestedUrl.isBlank()) {
-            return requestedUrl;
+            return preferUploadedReleaseAsset(item, requestedVersion, requestedUrl);
         }
         if (requestedVersion != null && !requestedVersion.isBlank()) {
             for (CatalogVersion release : item.versions()) {
@@ -137,6 +159,43 @@ public final class CatalogClient {
                 response.optString("url")
         );
         return resolved.isBlank() ? fetchBmiDetailDownload(item.id()) : resolved;
+    }
+
+    /**
+     * Resolves real published releases only when a user needs them. The BMI list
+     * intentionally exposes a moving source revision for some mods; IMM avoids
+     * treating that revision as semver by reading the repository release feed.
+     */
+    public CatalogItem enrichVersions(CatalogItem item) throws Exception {
+        if (item == null || !"BMI".equals(item.source())) return item;
+
+        JSONObject detail = fetchBmiDetail(item.id());
+        String homepage = first(
+                detail.optString("homepage"),
+                detail.optString("repo"),
+                item.homepage()
+        );
+        String sourceDownload = first(
+                detail.optString("download_url"),
+                detail.optString("downloadURL"),
+                item.downloadUrl()
+        );
+        String repository = githubRepository(homepage);
+        if (repository.isBlank()) {
+            return item.withReleaseMetadata(item.version(), sourceDownload, homepage, item.versions());
+        }
+
+        List<CatalogVersion> releases = githubReleases(repository, item.name());
+        if (releases.isEmpty()) {
+            return item.withReleaseMetadata(item.version(), sourceDownload, homepage, item.versions());
+        }
+        CatalogVersion latest = releases.get(0);
+        return item.withReleaseMetadata(
+                latest.version(),
+                latest.downloadUrl(),
+                homepage,
+                releases
+        );
     }
 
     private List<CatalogItem> fetchBmi() throws Exception {
@@ -259,7 +318,7 @@ public final class CatalogClient {
                         ? repository.substring(0, repository.indexOf('/'))
                         : metadata.optJSONObject("owner").optString("login");
                 String branch = first(metadata.optString("default_branch"), "main");
-                List<CatalogVersion> releases = githubReleases(repository);
+                List<CatalogVersion> releases = githubReleases(repository, name);
                 String releaseUrl = releases.isEmpty()
                         ? githubSourceArchive(repository, branch)
                         : releases.get(0).downloadUrl();
@@ -295,42 +354,176 @@ public final class CatalogClient {
         return result;
     }
 
-    private List<CatalogVersion> githubReleases(String repository) {
+    private List<CatalogVersion> githubReleases(String repository, String preferredName) {
         try {
-            JSONArray releases = new JSONArray(get(GITHUB_API + repository + "/releases?per_page=10"));
-            List<CatalogVersion> result = new ArrayList<>();
-            for (int releaseIndex = 0; releaseIndex < releases.length(); releaseIndex++) {
-                JSONObject release = releases.optJSONObject(releaseIndex);
-                if (release == null || release.optBoolean("draft") || release.optBoolean("prerelease")) continue;
-                String version = first(release.optString("tag_name"), release.optString("name"));
-                String url = "";
-                long downloads = 0;
-                long size = 0;
-                JSONArray assets = release.optJSONArray("assets");
-                if (assets != null) {
-                    for (int assetIndex = 0; assetIndex < assets.length(); assetIndex++) {
-                        JSONObject asset = assets.optJSONObject(assetIndex);
-                        if (asset == null) continue;
-                        String name = asset.optString("name").toLowerCase(Locale.ROOT);
-                        if (url.isBlank() && name.endsWith(".zip")) {
-                            url = asset.optString("browser_download_url");
-                            size = asset.optLong("size");
-                        }
-                        downloads += asset.optLong("download_count");
-                    }
+            JSONArray releases = new JSONArray(get(GITHUB_API + repository + "/releases?per_page=30"));
+            List<CatalogVersion> result = parseGithubApiReleases(releases, preferredName, repository);
+            if (!result.isEmpty()) return result;
+        } catch (Exception ignored) {
+            // Anonymous GitHub API quotas are small and shared by many users.
+            // The public release feed below is the quota-free fallback used by
+            // browsers and remains independent from the BMI source revision.
+        }
+        return githubReleaseFeed(repository, preferredName);
+    }
+
+    static List<CatalogVersion> parseGithubApiReleases(
+            JSONArray releases,
+            String preferredName,
+            String repository
+    ) {
+        List<CatalogVersion> result = new ArrayList<>();
+        for (int releaseIndex = 0; releaseIndex < releases.length(); releaseIndex++) {
+            JSONObject release = releases.optJSONObject(releaseIndex);
+            if (release == null || release.optBoolean("draft") || release.optBoolean("prerelease")) continue;
+            String version = first(release.optString("tag_name"), release.optString("name"));
+            String url = "";
+            long downloads = 0;
+            long size = 0;
+            JSONArray assets = release.optJSONArray("assets");
+            if (assets != null) {
+                JSONObject selected = selectReleaseAsset(assets, preferredName, repository);
+                for (int assetIndex = 0; assetIndex < assets.length(); assetIndex++) {
+                    JSONObject asset = assets.optJSONObject(assetIndex);
+                    if (asset == null) continue;
+                    downloads += asset.optLong("download_count");
                 }
-                if (url.isBlank()) url = release.optString("zipball_url");
-                if (!version.isBlank() && !url.isBlank()) {
-                    result.add(new CatalogVersion(
-                            version, url, downloads, size, release.optString("published_at")
-                    ));
+                if (selected != null) {
+                    url = selected.optString("browser_download_url");
+                    size = selected.optLong("size");
                 }
             }
-            return List.copyOf(result);
-        } catch (Exception ignored) {
-            // The caller falls back to the repository source archive.
+            if (url.isBlank()) url = release.optString("zipball_url");
+            if (!version.isBlank() && !url.isBlank()) {
+                result.add(new CatalogVersion(
+                        version, url, downloads, size, release.optString("published_at")
+                ));
+            }
         }
-        return List.of();
+        return List.copyOf(result);
+    }
+
+    private List<CatalogVersion> githubReleaseFeed(String repository, String preferredName) {
+        try {
+            String feed = getText("https://github.com/" + repository + "/releases.atom");
+            return parseGithubReleaseFeed(repository, feed);
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private String preferUploadedReleaseAsset(
+            CatalogItem item,
+            String requestedVersion,
+            String fallbackUrl
+    ) {
+        if (item == null || requestedVersion == null || requestedVersion.isBlank()
+                || !fallbackUrl.contains("/archive/refs/tags/")) {
+            return fallbackUrl;
+        }
+        String repository = githubRepository(item.homepage());
+        if (repository.isBlank()) return fallbackUrl;
+        try {
+            String html = getText(
+                    "https://github.com/" + repository + "/releases/expanded_assets/"
+                            + Uri.encode(requestedVersion)
+            );
+            String uploaded = selectExpandedReleaseAsset(html, item.name(), repository);
+            return uploaded.isBlank() ? fallbackUrl : uploaded;
+        } catch (Exception ignored) {
+            return fallbackUrl;
+        }
+    }
+
+    static List<CatalogVersion> parseGithubReleaseFeed(String repository, String feed) {
+        List<CatalogVersion> result = new ArrayList<>();
+        if (feed == null || feed.isBlank()) return result;
+        Matcher entries = RELEASE_FEED_ENTRY.matcher(feed);
+        while (entries.find() && result.size() < 30) {
+            String entry = entries.group(1);
+            Matcher tagMatch = RELEASE_FEED_TAG.matcher(entry);
+            if (!tagMatch.find()) continue;
+            String version = decodeUrlComponent(tagMatch.group(1).replace("&amp;", "&"));
+            if (version.isBlank()) continue;
+            Matcher updatedMatch = RELEASE_FEED_UPDATED.matcher(entry);
+            String publishedAt = updatedMatch.find() ? updatedMatch.group(1).trim() : "";
+            String archive = "https://github.com/" + repository + "/archive/refs/tags/"
+                    + encodePathSegment(version) + ".zip";
+            result.add(new CatalogVersion(version, archive, 0, 0, publishedAt));
+        }
+        return List.copyOf(result);
+    }
+
+    static String selectExpandedReleaseAsset(
+            String html,
+            String preferredName,
+            String repository
+    ) {
+        JSONArray assets = new JSONArray();
+        Matcher links = RELEASE_ASSET_ZIP.matcher(html == null ? "" : html);
+        while (links.find() && assets.length() < 100) {
+            String path = links.group(1).replace("&amp;", "&");
+            String url = path.startsWith("http") ? path : "https://github.com" + path;
+            int slash = path.lastIndexOf('/');
+            String name = slash >= 0 ? path.substring(slash + 1) : path;
+            try {
+                assets.put(new JSONObject()
+                        .put("name", name)
+                        .put("browser_download_url", url)
+                        .put("size", 0));
+            } catch (Exception ignored) {
+                // One malformed link must not hide the other release assets.
+            }
+        }
+        JSONObject selected = selectReleaseAsset(assets, preferredName, repository);
+        return selected == null ? "" : selected.optString("browser_download_url");
+    }
+
+    private static String decodeUrlComponent(String value) {
+        try {
+            return URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+        } catch (Exception ignored) {
+            return value;
+        }
+    }
+
+    private static String encodePathSegment(String value) {
+        try {
+            return URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20");
+        } catch (Exception ignored) {
+            return value.replace("/", "%2F").replace(" ", "%20");
+        }
+    }
+
+    static JSONObject selectReleaseAsset(
+            JSONArray assets,
+            String preferredName,
+            String repository
+    ) {
+        String preferred = ModRepository.normalizeId(preferredName);
+        int slash = repository.lastIndexOf('/');
+        String repoName = ModRepository.normalizeId(slash >= 0 ? repository.substring(slash + 1) : repository);
+        JSONObject best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (int index = 0; index < assets.length(); index++) {
+            JSONObject asset = assets.optJSONObject(index);
+            if (asset == null) continue;
+            String rawName = asset.optString("name");
+            String lower = rawName.toLowerCase(Locale.ROOT);
+            if (!lower.endsWith(".zip")) continue;
+            String normalized = ModRepository.normalizeId(rawName);
+            int score = 0;
+            if (!preferred.isBlank() && normalized.contains(preferred)) score += 100;
+            if (!repoName.isBlank() && normalized.contains(repoName)) score += 80;
+            if (lower.contains("smods") || lower.contains("steamodded") || lower.contains("lovely")) score -= 200;
+            long size = asset.optLong("size");
+            score += (int) Math.min(30, size / (1024L * 1024L));
+            if (best == null || score > bestScore) {
+                best = asset;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     private String githubSourceArchive(String repository, String branch) {
@@ -340,14 +533,27 @@ public final class CatalogClient {
     }
 
     private String fetchBmiDetailDownload(String id) throws Exception {
-        JSONObject detail = new JSONObject(
-                get("https://api-bmi.dasguney.com/mods/" + Uri.encode(id))
-        );
+        JSONObject detail = fetchBmiDetail(id);
         String url = first(detail.optString("download_url"), detail.optString("downloadURL"));
         if (url.isBlank()) {
             throw new IllegalStateException("BMI did not provide a downloadable archive.");
         }
         return url;
+    }
+
+    private JSONObject fetchBmiDetail(String id) throws Exception {
+        return new JSONObject(
+                get("https://api-bmi.dasguney.com/mods/" + Uri.encode(id))
+        );
+    }
+
+    private static String githubRepository(String address) {
+        if (address == null || address.isBlank()) return "";
+        Matcher matcher = Pattern.compile(
+                "^https://github\\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\\.git)?(?:/.*)?$",
+                Pattern.CASE_INSENSITIVE
+        ).matcher(address.trim());
+        return matcher.matches() ? matcher.group(1) : "";
     }
 
     private static List<CatalogItem> deduplicate(List<CatalogItem> input) {
@@ -480,6 +686,10 @@ public final class CatalogClient {
         connection.setConnectTimeout(10_000);
         connection.setReadTimeout(20_000);
         connection.setRequestProperty("Accept", "application/json");
+        if (connection.getURL().getHost().equalsIgnoreCase("api.github.com")) {
+            connection.setRequestProperty("Accept", "application/vnd.github+json");
+            connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
+        }
         connection.setRequestProperty("User-Agent", "Balatro-Mobile-Mod-Manager-Android/2.0");
         connection.setInstanceFollowRedirects(true);
     }

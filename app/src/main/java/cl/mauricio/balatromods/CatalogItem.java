@@ -57,6 +57,18 @@ public record CatalogItem(
     }
 
     public JSONObject toJson(boolean installed, String installedVersion, boolean updateAvailable) {
+        CatalogUpdatePolicy.Result status = new CatalogUpdatePolicy.Result(
+                updateAvailable ? CatalogUpdatePolicy.Status.AVAILABLE : CatalogUpdatePolicy.Status.CURRENT,
+                updateAvailable ? "A newer catalog version is available." : "No newer catalog version was detected."
+        );
+        return toJson(installed, installedVersion, status);
+    }
+
+    public JSONObject toJson(
+            boolean installed,
+            String installedVersion,
+            CatalogUpdatePolicy.Result updateStatus
+    ) {
         JSONObject json = new JSONObject();
         try {
             json.put("id", id);
@@ -81,7 +93,12 @@ public record CatalogItem(
             json.put("latestVersion", version);
             json.put("versionKind", VersionOrder.isSourceRevision(version)
                     ? "source-revision" : "release");
-            json.put("updateAvailable", installed && updateAvailable);
+            CatalogUpdatePolicy.Result safeStatus = updateStatus == null
+                    ? new CatalogUpdatePolicy.Result(CatalogUpdatePolicy.Status.UNKNOWN, "Version status unavailable.")
+                    : updateStatus;
+            json.put("updateAvailable", installed && safeStatus.updateAvailable());
+            json.put("updateState", installed ? safeStatus.wireValue() : "not-installed");
+            json.put("updateReason", installed ? safeStatus.reason() : "This mod is not installed.");
             JSONArray releaseVersions = new JSONArray();
             if (versions != null && !versions.isEmpty()) {
                 for (CatalogVersion release : versions) releaseVersions.put(release.toJson());
@@ -94,6 +111,25 @@ public record CatalogItem(
             throw new IllegalStateException("Could not serialize catalog item.", error);
         }
         return json;
+    }
+
+    public CatalogItem withReleaseMetadata(
+            String resolvedVersion,
+            String resolvedDownloadUrl,
+            String resolvedHomepage,
+            List<CatalogVersion> resolvedVersions
+    ) {
+        List<CatalogVersion> safeVersions = resolvedVersions == null ? List.of() : List.copyOf(resolvedVersions);
+        return new CatalogItem(
+                id, source, name, author,
+                resolvedVersion == null || resolvedVersion.isBlank() ? version : resolvedVersion,
+                summary,
+                resolvedDownloadUrl == null || resolvedDownloadUrl.isBlank() ? downloadUrl : resolvedDownloadUrl,
+                resolvedHomepage == null || resolvedHomepage.isBlank() ? homepage : resolvedHomepage,
+                folderName, thumbnailUrl, categories, dependencies,
+                requiresSteamodded, requiresTalisman, downloads, fileSize,
+                safeVersions.isEmpty() ? versions : safeVersions
+        );
     }
 
 }

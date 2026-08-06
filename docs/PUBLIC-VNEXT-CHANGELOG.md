@@ -1,5 +1,16 @@
 # Public vNext changelog
 
+## 2.0.4 · 2026-08-06
+
+- Separated semantic releases from moving Balatro Mod Index source hashes, so an
+  uncomparable hash is never presented as a confirmed update.
+- Added on-demand GitHub release history with a quota-free official Atom-feed fallback;
+  uploaded mod packages are preferred over bundled Steamodded archives.
+- Added **Save diagnostic ZIP** and **Share via Telegram** with bounded inventory,
+  catalog/receipt state, useful text files, secret redaction, and explicit APK/save exclusion.
+- Added **Switch version** for intentional upgrades or downgrades that are not newer than
+  the installed build, instead of misleadingly labelling every different version as Update.
+
 ## 2.0.1 · 2026-08-05
 
 - Added per-card `Installing…` / `Updating…` feedback without a blocking overlay.

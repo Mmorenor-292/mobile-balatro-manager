@@ -986,6 +986,15 @@ button:disabled { cursor: not-allowed; }
 .version-update-button { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 2.35rem; border: 1px solid var(--blue); background: #10233b; color: var(--blue); font: 900 .62rem var(--display); letter-spacing: .04em; text-transform: uppercase; }
 .version-update-button:disabled { opacity: .62; }
 .version-update-button svg, .install-button svg, .installed-button svg { width: 1rem; }
+.load-versions-button { display: inline-flex; width: 100%; align-items: center; justify-content: center; gap: .35rem; min-height: 2.25rem; margin-top: .5rem; border: 1px solid var(--gold); background: #2a230d; color: var(--gold); font: 900 .61rem var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.load-versions-button:disabled { opacity: .62; }
+.load-versions-button svg { width: .95rem; }
+.version-status { margin: .4rem 0 0 !important; padding: .4rem .5rem; border: 1px solid #5d5632; background: #231f0e; font-size: .66rem !important; }
+.version-status.unknown, .catalog-update-unknown { color: var(--gold); }
+.diagnostic-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; margin-top: .65rem; }
+.diagnostic-actions .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; margin-top: 0; }
+.diagnostic-actions svg { width: 1rem; }
+@media (max-width: 380px) { .diagnostic-actions { grid-template-columns: 1fr; } }
 .catalog-unmatched { color: var(--gold); }
 .detail-actions .danger-action { border-color: #984440; color: var(--red); }
 .spin { animation: spin .8s linear infinite; }

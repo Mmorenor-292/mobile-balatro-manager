@@ -9,11 +9,26 @@ public class CatalogUpdatePolicyTest {
     @Test
     public void sourceRevisionUsesRecordedRevisionInsteadOfInstalledSemver() {
         assertTrue(CatalogUpdatePolicy.updateAvailable(
-                "3a9be1c", "3.8.1-0724a", "old1234"
+                "3a9be1c", "3.8.1-0724a", "abc1234"
         ));
         assertFalse(CatalogUpdatePolicy.updateAvailable(
                 "3a9be1c", "3.8.1-0731b", "3a9be1c"
         ));
+    }
+
+    @Test
+    public void sourceRevisionWithoutReceiptIsUnknownNotAnUpdate() {
+        CatalogUpdatePolicy.Result result = CatalogUpdatePolicy.evaluate(
+                "3a9be1c", "3.8.1-0731b", ""
+        );
+        assertFalse(result.updateAvailable());
+        org.junit.Assert.assertEquals(CatalogUpdatePolicy.Status.UNKNOWN, result.status());
+
+        CatalogUpdatePolicy.Result semanticReceipt = CatalogUpdatePolicy.evaluate(
+                "3a9be1c", "3.8.1-0731b", "3.8.0"
+        );
+        assertFalse(semanticReceipt.updateAvailable());
+        org.junit.Assert.assertEquals(CatalogUpdatePolicy.Status.UNKNOWN, semanticReceipt.status());
     }
 
     @Test
@@ -23,6 +38,9 @@ public class CatalogUpdatePolicyTest {
         ));
         assertFalse(CatalogUpdatePolicy.updateAvailable(
                 "3.8.1-0731b", "3.8.1-0731b", ""
+        ));
+        assertFalse(CatalogUpdatePolicy.updateAvailable(
+                "3.8.0", "3.8.1-0731b", ""
         ));
     }
 }

@@ -79,6 +79,7 @@ public final class MainActivity extends Activity {
     private static final int PICK_STEAM_SOURCE_FILE = 1615;
     private static final int PICK_STEAM_SOURCE_FOLDER = 1616;
     private static final int PICK_SAVE_TARGET_TREE = 1617;
+    private static final int CREATE_DIAGNOSTIC_ZIP = 1618;
     private static final String PREFS = "balatro_mod_deck";
     private static final String PREF_TREE_URI = "mods_tree_uri";
     private static final String PREF_INSTALL_HISTORY = "install_history";
@@ -117,6 +118,7 @@ public final class MainActivity extends Activity {
     private volatile OperationStatus runningOperation;
     private String message = "";
     private String pendingReport = "";
+    private File pendingDiagnosticArchive;
     private File pendingSaveArchive;
     private String nativeCompatibility = "unknown";
     private String nativePreflight = "Select an APK or installed copy to begin.";
@@ -1497,6 +1499,34 @@ public final class MainActivity extends Activity {
             handleSteamSourceResult(resultCode, data, false);
         } else if (requestCode == PICK_STEAM_SOURCE_FOLDER) {
             handleSteamSourceResult(resultCode, data, true);
+        } else if (requestCode == CREATE_DIAGNOSTIC_ZIP) {
+            handleDiagnosticDestination(resultCode, data);
+        }
+    }
+
+    private void handleDiagnosticDestination(int resultCode, Intent data) {
+        File archive = pendingDiagnosticArchive;
+        pendingDiagnosticArchive = null;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null || archive == null) {
+            if (archive != null) {
+                //noinspection ResultOfMethodCallIgnored
+                archive.delete();
+            }
+            return;
+        }
+        try (InputStream input = new FileInputStream(archive);
+             OutputStream output = getContentResolver().openOutputStream(data.getData(), "wt")) {
+            if (output == null) throw new IllegalStateException("The ZIP destination is not writable.");
+            byte[] buffer = new byte[32_768];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            message = "Diagnostic ZIP saved";
+        } catch (Exception error) {
+            message = readable(error);
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            archive.delete();
+            pushState();
         }
     }
 
@@ -2241,6 +2271,7 @@ public final class MainActivity extends Activity {
             } catch (Exception error) {
                 catalogWarning = " Catalog refresh failed, so cached metadata was used.";
             }
+            resolveInstalledReleaseMetadata();
             List<CatalogItem> updates = availableCatalogUpdates();
             if (updates.isEmpty()) {
                 int fixed = applyAutomaticCompatibilityFixes();
@@ -2309,14 +2340,70 @@ public final class MainActivity extends Activity {
     }
 
     private boolean catalogUpdateAvailable(CatalogItem item, ModEntry installed) {
+        return catalogUpdateStatus(item, installed).updateAvailable();
+    }
+
+    private CatalogUpdatePolicy.Result catalogUpdateStatus(CatalogItem item, ModEntry installed) {
         if (item == null || installed == null || item.version() == null || item.version().isBlank()) {
-            return false;
+            return new CatalogUpdatePolicy.Result(
+                    CatalogUpdatePolicy.Status.UNKNOWN,
+                    "The installed mod or catalog version could not be identified."
+            );
         }
-        return CatalogUpdatePolicy.updateAvailable(
+        return CatalogUpdatePolicy.evaluate(
                 item.version(),
                 installed.version,
                 installedCatalogRevision(item, installed.folderName)
         );
+    }
+
+    private void loadCatalogVersions(String id, String source) {
+        runFileOperation("versions", id, source, "Loading published versions…", () -> {
+            CatalogItem item = findCatalogItem(id, source);
+            CatalogItem enriched = catalogClient.enrichVersions(item);
+            replaceCatalogItem(item, enriched);
+            catalogClient.persist(new ArrayList<>(catalog));
+            int releases = enriched.versions() == null ? 0 : enriched.versions().size();
+            if (releases > 1 || !VersionOrder.isSourceRevision(enriched.version())) {
+                return releases + (releases == 1 ? " published version loaded." : " published versions loaded.");
+            }
+            return "No published releases were found; latest source remains available.";
+        });
+    }
+
+    private void resolveInstalledReleaseMetadata() {
+        List<CatalogItem> snapshot = new ArrayList<>(catalog);
+        int total = 0;
+        for (CatalogItem item : snapshot) {
+            if ("BMI".equals(item.source()) && findInstalledCatalogMod(item) != null) total++;
+        }
+        int current = 0;
+        for (CatalogItem item : snapshot) {
+            if (!"BMI".equals(item.source()) || findInstalledCatalogMod(item) == null) continue;
+            current++;
+            updateRunningOperation(
+                    item.id(),
+                    item.source(),
+                    "Resolving release " + current + " of " + total + ": " + item.name() + "…"
+            );
+            try {
+                replaceCatalogItem(item, catalogClient.enrichVersions(item));
+            } catch (Exception ignored) {
+                // Unknown is safer than a false update; the item remains usable as source-only.
+            }
+        }
+        catalogClient.persist(new ArrayList<>(catalog));
+    }
+
+    private void replaceCatalogItem(CatalogItem original, CatalogItem replacement) {
+        if (original == null || replacement == null) return;
+        for (int index = 0; index < catalog.size(); index++) {
+            CatalogItem existing = catalog.get(index);
+            if (existing.id().equals(original.id()) && existing.source().equals(original.source())) {
+                catalog.set(index, replacement);
+                return;
+            }
+        }
     }
 
     private String installedCatalogRevision(CatalogItem item, String folderName) {
@@ -2385,6 +2472,17 @@ public final class MainActivity extends Activity {
                 replaceExisting ? "Updating mod…" : "Installing mod…", () -> {
             requireScan();
             CatalogItem item = findCatalogItem(id, source);
+            String originalVersion = item.version();
+            if ("BMI".equals(item.source())) {
+                try {
+                    CatalogItem enriched = catalogClient.enrichVersions(item);
+                    replaceCatalogItem(item, enriched);
+                    item = enriched;
+                    catalogClient.persist(new ArrayList<>(catalog));
+                } catch (Exception ignored) {
+                    // Source-only installation remains available when release metadata is offline.
+                }
+            }
             List<String> missingFrameworks = missingFrameworks(item);
             if (!missingFrameworks.isEmpty()) {
                 throw new IllegalStateException(
@@ -2402,7 +2500,14 @@ public final class MainActivity extends Activity {
             String selectedVersion = requestedVersion == null || requestedVersion.isBlank()
                     ? item.version()
                     : requestedVersion;
-            String url = catalogClient.resolveDownloadUrl(item, selectedVersion, requestedDownloadUrl);
+            String selectedDownloadUrl = requestedDownloadUrl;
+            if (VersionOrder.isSourceRevision(originalVersion)
+                    && selectedVersion.equalsIgnoreCase(originalVersion)
+                    && !VersionOrder.isSourceRevision(item.version())) {
+                selectedVersion = item.version();
+                selectedDownloadUrl = "";
+            }
+            String url = catalogClient.resolveDownloadUrl(item, selectedVersion, selectedDownloadUrl);
             CatalogInstaller.InstallResult result = CatalogInstaller.install(
                     this, scan.folder(), item, url, replaceExisting, existing
             );
@@ -2648,6 +2753,222 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void exportDiagnosticZip(boolean share) {
+        runFileOperation("diagnostic", "diagnostic", "local", "Building diagnostic ZIP…", () -> {
+            requireScan();
+            File archive = buildDiagnosticArchive();
+            main.post(() -> {
+                if (share) {
+                    shareDiagnosticArchive(archive);
+                } else {
+                    pendingDiagnosticArchive = archive;
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.setType("application/zip");
+                    intent.putExtra(Intent.EXTRA_TITLE, archive.getName());
+                    try {
+                        startActivityForResult(intent, CREATE_DIAGNOSTIC_ZIP);
+                    } catch (ActivityNotFoundException error) {
+                        pendingDiagnosticArchive = null;
+                        //noinspection ResultOfMethodCallIgnored
+                        archive.delete();
+                        message = "This Android build has no compatible ZIP exporter.";
+                        pushState();
+                    }
+                }
+            });
+            return share
+                    ? "Diagnostic ZIP ready to share."
+                    : "Diagnostic ZIP ready. Choose where to save it.";
+        });
+    }
+
+    private File buildDiagnosticArchive() throws Exception {
+        for (File old : getCacheDir().listFiles() == null ? new File[0] : getCacheDir().listFiles()) {
+            if (old.getName().startsWith("MBM-diagnostic-") && old.getName().endsWith(".zip")) {
+                //noinspection ResultOfMethodCallIgnored
+                old.delete();
+            }
+        }
+        File archive = new File(getCacheDir(), "MBM-diagnostic-" + System.currentTimeMillis() + ".zip");
+        Map<String, byte[]> entries = DiagnosticBundle.entries();
+        entries.put("README.txt", DiagnosticBundle.utf8(
+                "MBM diagnostic bundle\n\n"
+                        + "Send this ZIP when asking for help with mod versions, dependencies or crashes.\n"
+                        + "It contains the mod inventory, parsed metadata, catalog matches, install receipts, scan errors "
+                        + "and bounded text files useful for debugging.\n\n"
+                        + "Excluded by design: Balatro game files/APKs, save data, images, audio, credentials, pairing tokens "
+                        + "and binary mod assets. Lines that look like passwords, tokens, cookies or API keys are redacted.\n"
+        ));
+        entries.put("environment.json", DiagnosticBundle.utf8(buildReport()));
+        entries.put("catalog-status.json", DiagnosticBundle.utf8(buildCatalogDiagnostic().toString(2)));
+        entries.put("install-history.json", DiagnosticBundle.utf8(installHistoryJson().toString(2)));
+
+        JSONArray inventory = new JSONArray();
+        int[] fileCount = {0};
+        long[] includedBytes = {0};
+        if (scan != null) {
+            for (ModEntry mod : scan.mods()) {
+                collectDiagnosticFiles(
+                        mod.directory,
+                        "mods/" + safeDiagnosticSegment(mod.folderName),
+                        0,
+                        inventory,
+                        entries,
+                        fileCount,
+                        includedBytes
+                );
+            }
+        }
+        entries.put("inventory.json", DiagnosticBundle.utf8(inventory.toString(2)));
+        return DiagnosticBundle.write(archive, entries);
+    }
+
+    private JSONObject buildCatalogDiagnostic() {
+        JSONObject result = new JSONObject();
+        JSONArray matches = new JSONArray();
+        try {
+            result.put("generatedAt", System.currentTimeMillis());
+            result.put("catalogItems", catalog.size());
+            if (scan != null) {
+                for (ModEntry installed : scan.mods()) {
+                    JSONObject row = new JSONObject();
+                    row.put("folder", installed.folderName);
+                    row.put("id", installed.id);
+                    row.put("installedVersion", installed.version);
+                    CatalogItem match = null;
+                    for (CatalogItem item : catalog) {
+                        if (findInstalledCatalogMod(item) == installed) {
+                            match = item;
+                            break;
+                        }
+                    }
+                    if (match == null) {
+                        row.put("match", JSONObject.NULL);
+                        row.put("updateState", "unmatched");
+                    } else {
+                        CatalogUpdatePolicy.Result status = catalogUpdateStatus(match, installed);
+                        row.put("match", match.toJson(true, installed.version, status));
+                        row.put("updateState", status.wireValue());
+                        row.put("updateReason", status.reason());
+                        row.put("installedCatalogRevision", installedCatalogRevision(match, installed.folderName));
+                    }
+                    matches.put(row);
+                }
+            }
+            result.put("mods", matches);
+        } catch (Exception error) {
+            try {
+                result.put("error", readable(error));
+            } catch (Exception ignored) {
+                // Keep a valid partial diagnostic object.
+            }
+        }
+        return result;
+    }
+
+    private void collectDiagnosticFiles(
+            DocumentFile directory,
+            String prefix,
+            int depth,
+            JSONArray inventory,
+            Map<String, byte[]> entries,
+            int[] fileCount,
+            long[] includedBytes
+    ) throws Exception {
+        if (directory == null || depth > 8 || fileCount[0] >= 5_000) return;
+        for (DocumentFile child : directory.listFiles()) {
+            if (fileCount[0] >= 5_000) return;
+            String name = child.getName() == null ? "unnamed" : child.getName();
+            String path = prefix + "/" + safeDiagnosticSegment(name);
+            if (child.isDirectory()) {
+                collectDiagnosticFiles(child, path, depth + 1, inventory, entries, fileCount, includedBytes);
+                continue;
+            }
+            if (!child.isFile()) continue;
+            fileCount[0]++;
+            JSONObject item = new JSONObject();
+            item.put("path", path);
+            item.put("size", child.length());
+            item.put("lastModified", child.lastModified());
+            item.put("type", child.getType() == null ? "" : child.getType());
+            item.put("includedText", false);
+
+            if (isDiagnosticText(name) && includedBytes[0] < 12L * 1024L * 1024L) {
+                byte[] raw = readBoundedDocument(child, 256 * 1024);
+                if (raw != null && includedBytes[0] + raw.length <= 12L * 1024L * 1024L) {
+                    String redacted = redactDiagnosticText(new String(raw, StandardCharsets.UTF_8));
+                    byte[] safe = redacted.getBytes(StandardCharsets.UTF_8);
+                    entries.put("diagnostic-files/" + path, safe);
+                    includedBytes[0] += safe.length;
+                    item.put("includedText", true);
+                    item.put("sha256", sha256(raw));
+                }
+            }
+            inventory.put(item);
+        }
+    }
+
+    private byte[] readBoundedDocument(DocumentFile file, int limit) throws Exception {
+        InputStream raw = getContentResolver().openInputStream(file.getUri());
+        if (raw == null) return null;
+        try (InputStream input = raw; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[16_384];
+            int total = 0;
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                total += read;
+                if (total > limit) return null;
+                output.write(buffer, 0, read);
+            }
+            return output.toByteArray();
+        }
+    }
+
+    private static boolean isDiagnosticText(String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".json") || lower.endsWith(".toml") || lower.endsWith(".lua")
+                || lower.endsWith(".txt") || lower.endsWith(".log") || lower.endsWith(".md")
+                || lower.endsWith(".cfg") || lower.endsWith(".ini");
+    }
+
+    private static String safeDiagnosticSegment(String value) {
+        String safe = value == null ? "unnamed" : value.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+        if (safe.isBlank() || safe.equals(".") || safe.equals("..")) return "unnamed";
+        return safe;
+    }
+
+    private static String redactDiagnosticText(String value) {
+        return DiagnosticBundle.redact(value);
+    }
+
+    private static String sha256(byte[] value) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(value);
+        StringBuilder output = new StringBuilder(digest.length * 2);
+        for (byte item : digest) output.append(String.format(Locale.ROOT, "%02x", item));
+        return output.toString();
+    }
+
+    private void shareDiagnosticArchive(File archive) {
+        try {
+            Uri uri = FileProvider.getUriForFile(
+                    this,
+                    BuildConfig.APPLICATION_ID + ".fileprovider",
+                    archive
+            );
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("application/zip");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.putExtra(Intent.EXTRA_SUBJECT, "MBM diagnostic bundle");
+            send.putExtra(Intent.EXTRA_TEXT, "MBM diagnostic bundle for mod troubleshooting.");
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            send.setClipData(ClipData.newRawUri("MBM diagnostic ZIP", uri));
+            startActivity(Intent.createChooser(send, "Share diagnostic ZIP"));
+        } catch (Exception error) {
+            message = readable(error);
+            pushState();
+        }
+    }
+
     private void resetSettings() {
         main.post(() -> {
             if (webView != null) {
@@ -2867,7 +3188,12 @@ public final class MainActivity extends Activity {
                 available.put(item.toJson(
                         installedMod != null,
                         installedMod == null ? "" : installedMod.version,
-                        installedMod != null && catalogUpdateAvailable(item, installedMod)
+                        installedMod == null
+                                ? new CatalogUpdatePolicy.Result(
+                                CatalogUpdatePolicy.Status.UNKNOWN,
+                                "This mod is not installed."
+                        )
+                                : catalogUpdateStatus(item, installedMod)
                 ));
             }
             state.put("catalog", available);
@@ -2894,7 +3220,8 @@ public final class MainActivity extends Activity {
             report.put("createdAt", System.currentTimeMillis());
             report.put("balatroPackageDetected", isPackageInstalled(KNOWN_BALATRO_PACKAGE));
             report.put("providerDetected", isProviderAvailable(KNOWN_PROVIDER));
-            report.put("folder", scan == null ? "" : scan.folderUri().toString());
+            report.put("modsFolder", scan == null || scan.folder() == null
+                    ? "" : String.valueOf(scan.folder().getName()));
             JSONArray mods = new JSONArray();
             if (scan != null) {
                 for (ModEntry mod : scan.mods()) {
@@ -2903,7 +3230,9 @@ public final class MainActivity extends Activity {
                 report.put("scanErrors", new JSONArray(scan.scanErrors()));
             }
             report.put("mods", mods);
+            report.put("junk", scan == null ? new JSONArray() : new JSONArray(scan.junkNames()));
             report.put("recovery", recovery.toJson());
+            report.put("privacy", "No game APK, save data, credentials or pairing tokens included.");
             return report.toString(2);
         } catch (Exception error) {
             return "{\"error\":\"Could not build diagnostic report\"}";
@@ -3026,6 +3355,10 @@ public final class MainActivity extends Activity {
                 case "finishIsolation" -> finishIsolation();
                 case "launchBalatro" -> launchBalatro();
                 case "loadCatalog" -> loadCatalog();
+                case "loadCatalogVersions" -> loadCatalogVersions(
+                        string(payload, "id"),
+                        string(payload, "source")
+                );
                 case "installCatalogMod" -> installCatalogItem(
                         string(payload, "id"),
                         string(payload, "source"),
@@ -3097,6 +3430,8 @@ public final class MainActivity extends Activity {
                 }
                 case "resetSettings" -> resetSettings();
                 case "exportReport" -> exportReport();
+                case "saveDiagnosticZip" -> exportDiagnosticZip(false);
+                case "shareDiagnosticZip" -> exportDiagnosticZip(true);
                 case "openAwesomeBalatro" -> openAwesomeBalatro();
                 case "openModWebsite" -> openModWebsite(string(payload, "url"));
                 default -> {

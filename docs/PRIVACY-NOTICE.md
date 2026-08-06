@@ -1,6 +1,6 @@
 # MBM - Mobile Balatro Manager — Privacy Notice
 
-**Last updated:** 2026-08-02
+**Last updated:** 2026-08-06
 
 MBM - Mobile Balatro Manager is a privacy-conscious companion for user-owned Balatro files. It does not include Balatro, commercial game files, saves, Steam credentials, Google credentials, or signing keys.
 
@@ -19,6 +19,12 @@ MBM - Mobile Balatro Manager is a privacy-conscious companion for user-owned Bal
 ## Diagnostics and permissions
 
 The app may request access to a user-selected Mods folder, save folder, APK/source file, or desktop helper address. File inspection is bounded and does not execute Lua or mod code. Local crash reports are off by default; if the user opts in under Settings, diagnostics remain on-device and are exported only on demand through the Android share/picker flow.
+
+The optional diagnostic ZIP contains a bounded file inventory, parsed mod metadata,
+dependency and catalog status, installation receipts, scan errors, and selected small text
+files such as Lua, JSON, TOML and logs. It excludes the game/APK, saves, images, audio and
+other binary assets. Secret-like lines and bearer tokens are redacted before the ZIP is
+created. The user chooses where to save or share it; MBM does not upload it automatically.
 
 ## Retention and deletion
 

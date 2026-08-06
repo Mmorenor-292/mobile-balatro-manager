@@ -72,7 +72,7 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     render(<App />);
     await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Discover" }));
     expect(screen.getAllByText("Installed:").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Latest:").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Latest published:").length).toBeGreaterThan(0);
     const handyCard = screen.getByText("Handy").closest("article");
     const versionPicker = screen.getByRole("combobox", { name: "Version for Handy" });
     expect(versionPicker).toHaveValue("1.6.0");
@@ -85,6 +85,42 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     await user.click(update);
     expect(within(handyCard).getByRole("button", { name: /Updating/ })).toBeDisabled();
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/updated to 1.6.0 and enabled/i));
+  });
+
+  it("loads published BMI releases on demand", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Discover" }));
+    const card = screen.getByText("Joker Display").closest("article");
+    await user.click(within(card).getByRole("button", { name: "Load published versions" }));
+    const picker = await within(card).findByRole("combobox", { name: "Version for Joker Display" });
+    expect(picker).toHaveValue("1.9.0");
+    expect(within(picker).getByRole("option", { name: /1.8.4/ })).toBeInTheDocument();
+  });
+
+  it("does not call an older published release an update", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Discover" }));
+    window.__nativeReceive({
+      ...mockState,
+      catalog: [{
+        id: "AheadOfCatalog",
+        source: "BMI",
+        name: "Ahead of Catalog",
+        author: "Tester",
+        installed: true,
+        installedVersion: "2.0.0-dev1",
+        version: "1.9.0",
+        latestVersion: "1.9.0",
+        updateAvailable: false,
+        updateState: "current",
+        versions: [{ version: "1.9.0", downloadUrl: "https://example.invalid/1.9.0.zip" }],
+      }],
+    });
+    const card = (await screen.findByText("Ahead of Catalog")).closest("article");
+    expect(within(card).queryByText("Update available")).not.toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Switch version" })).toBeEnabled();
   });
 
   it("uses the four explicit save choices", async () => {
@@ -167,5 +203,14 @@ describe("MBM - Mobile Balatro Manager public vNext", () => {
     const retention = screen.getByRole("combobox", { name: /History retention/i });
     await user.selectOptions(retention, "50");
     expect(retention).toHaveValue("50");
+  });
+
+  it("offers one saveable and shareable diagnostic ZIP", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation", { name: "Primary navigation" })).getByRole("button", { name: "Help" }));
+    expect(screen.getByRole("button", { name: /Save diagnostic ZIP/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Share via Telegram/ }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/ready to share/i);
   });
 });

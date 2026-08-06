@@ -6,7 +6,7 @@ const mockState = {
   folder: "ASET/Mods",
   gameFile: "Balatro.exe · Steam library detected",
   nativeCompatibility: "unsupported",
-  version: "2.0.3",
+  version: "2.0.4",
   channel: "beta",
   canUndo: true,
   counts: { active: 12, hidden: 6, problems: 2 },
@@ -218,6 +218,24 @@ export function invoke(method, payload = {}) {
     emitMock({ message: "Choose a ZIP or folder from device storage." });
   } else if (method === "importModFolder") {
     emitMock({ message: "Choose a mod folder from device storage." });
+  } else if (method === "loadCatalogVersions") {
+    const catalog = state.catalog.map((item) => item.id === payload.id && item.source === payload.source
+      ? {
+          ...item,
+          version: "1.9.0",
+          latestVersion: "1.9.0",
+          versionKind: "release",
+          versions: [
+            { version: "1.9.0", downloadUrl: "https://example.invalid/mod-1.9.0.zip" },
+            { version: "1.8.4", downloadUrl: "https://example.invalid/mod-1.8.4.zip" },
+          ],
+        }
+      : item);
+    emitMock({ catalog, message: "2 published versions loaded." });
+  } else if (method === "saveDiagnosticZip") {
+    emitMock({ message: "Diagnostic ZIP ready. Choose where to save it." });
+  } else if (method === "shareDiagnosticZip") {
+    emitMock({ message: "Diagnostic ZIP ready to share." });
   } else if (method === "cleanAllJunk") {
     emitMock({ operation: { active: true, kind: "cleanup", itemId: "all", source: "local", label: "Cleaning known junk…" }, message: "Cleaning known junk…" });
     setTimeout(() => emitMock({ junkCount: 0, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: "3 junk items were permanently removed. Mods and backups were left untouched." }), 450);

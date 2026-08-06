@@ -1,4 +1,4 @@
-# MBM - Mobile Balatro Manager 2.0.3
+# MBM - Mobile Balatro Manager 2.0.4
 
 An independent Android manager for Balatro Modded. It remains available even when a
 broken mod prevents the game from starting, and now exposes separate Steam/local,
@@ -18,6 +18,19 @@ Downloaded and imported mods are inspected in private cache first, then installe
 into the collection and enabled. Discover and Library always show a version selector; when
 the source exposes release history, the user can update, downgrade or reinstall without
 deleting the current copy first. The app never executes Lua code.
+
+For Balatro Mod Index entries, **Load published versions** resolves stable GitHub releases
+on demand instead of presenting a moving commit hash as a semantic version. **Update all**
+does the same for installed mods before comparing versions. If only source code exists and
+MBM has no matching installation receipt, the result is **Version check needed**, not a
+false update notification. If GitHub's anonymous API quota is exhausted, MBM uses GitHub's
+official release feed and immutable tag archives, then resolves the uploaded ZIP only when
+the selected version is installed.
+
+Help includes **Save diagnostic ZIP** and **Share via Telegram**. The privacy-filtered
+archive contains inventory, parsed mod metadata, dependency and catalog status, install
+receipts, scan errors, and bounded text files useful for debugging. It excludes game/APK
+files, saves, credentials, images, audio and binary assets, and redacts secret-like lines.
 
 Mod writes remain serialized for Android storage safety, but individual cards now
 show **Queued**, **Installing**, **Updating**, **Enabling**, **Disabling** or
