@@ -107,18 +107,10 @@ public final class ModMetadataParser {
     }
 
     private static String normalizeDependency(String value) {
-        String normalized = value.trim();
-        int versionSeparator = normalized.lastIndexOf('-');
-        if (versionSeparator > 0
-                && versionSeparator + 1 < normalized.length()
-                && Character.isDigit(normalized.charAt(versionSeparator + 1))) {
-            normalized = normalized.substring(0, versionSeparator);
-        }
-        int ownerSeparator = normalized.indexOf('-');
-        if (ownerSeparator > 0 && normalized.contains("@")) {
-            normalized = normalized.substring(ownerSeparator + 1);
-        }
-        return normalized;
+        // Preserve the complete rule. DependencySpec performs the format-specific
+        // parsing later, so diagnostics can distinguish a missing mod from an
+        // installed version that is too old.
+        return value.trim();
     }
 
     private static String joinValue(Object value) {

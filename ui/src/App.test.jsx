@@ -54,4 +54,16 @@ describe("Interfaz simplificada", () => {
       catalogForMod({ name: "Handy" }, [{ name: "Handy" }, { name: "Handy" }]),
     ).toBe(null);
   });
-});
+  it('envía la versión elegida al motor y respeta su detección', async () => {
+    const user = userEvent.setup(); const bridge = vi.fn(); window.AndroidBridge = {invoke:bridge};
+    render(<App />);
+    act(()=>window.__nativeReceive({connected:true,loading:false,mods:[{folder:'Handy',name:'Handy',version:'1.5.2',hidden:false}],catalog:[{id:'Handy',folderName:'Handy',name:'Handy',source:'BMI',installed:true,installedVersion:'1.5.2',latestVersion:'1.6.0',updateAvailable:true,versions:[{version:'1.6.0',downloadUrl:'https://example.invalid/new.zip'},{version:'1.5.1',downloadUrl:'https://example.invalid/old.zip'}]}]}));
+    await user.click(within(screen.getByRole('navigation')).getByRole('button',{name:'Mods'}));
+    expect(screen.getByRole('button',{name:'Actualizar Handy'})).toBeInTheDocument();
+    await user.click(screen.getByRole('button',{name:'Elegir versión de Handy'}));
+    await user.selectOptions(screen.getByRole('combobox',{name:'Versión de Handy'}),'1.5.1');
+    await user.click(screen.getByRole('button',{name:'Instalar versión seleccionada'}));
+    expect(bridge).toHaveBeenCalledWith('updateCatalogMod',JSON.stringify({id:'Handy',source:'BMI',version:'1.5.1',downloadUrl:'https://example.invalid/old.zip'}));
+    expect(hasUpdate({version:'1.0.0'},{version:'2.0.0',updateAvailable:false})).toBe(false);
+  });});
+

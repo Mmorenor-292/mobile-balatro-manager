@@ -1,0 +1,53 @@
+plugins {
+    id "com.android.application"
+}
+
+def signingProperties = new Properties()
+def signingPropertiesPath = System.getenv("BALATRO_SIGNING_PROPERTIES")
+if (signingPropertiesPath != null && file(signingPropertiesPath).exists()) {
+    file(signingPropertiesPath).withInputStream { signingProperties.load(it) }
+}
+
+android {
+    namespace "cl.mauricio.balatroassistant"
+    compileSdk 37
+
+    defaultConfig {
+        applicationId "cl.mauricio.balatroassistant"
+        minSdk 26
+        targetSdk 37
+        versionCode 1
+        versionName "1.0.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (!signingProperties.isEmpty()) {
+            balatroRelease {
+                storeFile file(signingProperties.getProperty("storeFile"))
+                storePassword signingProperties.getProperty("storePassword")
+                keyAlias signingProperties.getProperty("keyAlias")
+                keyPassword signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            if (!signingProperties.isEmpty()) {
+                signingConfig signingConfigs.balatroRelease
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "androidx.webkit:webkit:1.16.0"
+}

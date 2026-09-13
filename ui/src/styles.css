@@ -989,3 +989,16 @@ button:active:not(:disabled) {
     transition: none !important;
   }
 }
+.release-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.release-picker select {
+  color: var(--cream);
+  background: #102a36;
+  border: 1px solid var(--line);
+  padding: 12px;
+  font: inherit;
+  width: 100%;
+}

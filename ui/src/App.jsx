@@ -24,6 +24,8 @@ import {
 import { invoke, mockState, subscribe } from "./bridge";
 import {
   catalogForMod,
+  isBusy,
+  canInstall,
   hasUpdate,
   readAppearance,
   saveAppearance,
@@ -206,7 +208,7 @@ export default function App() {
               <ChevronRight />
             </button>
           )}
-          {!state.connected && !state.loading && (
+          {!state.connected && !isBusy(state) && (
             <button
               className="pixel update-callout"
               onClick={() => invoke("chooseFolder", { automatic: true })}
@@ -295,7 +297,7 @@ export default function App() {
                         role="switch"
                         aria-label={`Activar ${mod.name}`}
                         checked={!mod.hidden}
-                        disabled={state.loading || !state.connected}
+                        disabled={isBusy(state) || !state.connected}
                         onChange={(event) =>
                           invoke("toggleMod", {
                             folder: mod.folder,
@@ -320,7 +322,7 @@ export default function App() {
                       {hasUpdate(mod, item) && (
                         <button
                           className="pixel icon-button"
-                          disabled={state.loading || !state.connected}
+                          disabled={isBusy(state) || !state.connected}
                           aria-label={`Actualizar ${mod.name}`}
                           onClick={() =>
                             setDialog({ type: "update", mod, item })
@@ -344,7 +346,7 @@ export default function App() {
               );
             })}
           </div>
-          {!visibleMods.length && !state.loading && (
+          {!visibleMods.length && !isBusy(state) && (
             <div className="pixel empty-state">
               <List />
               <h2>
@@ -371,7 +373,7 @@ export default function App() {
           )}
           <button
             className="text-button refresh-foot"
-            disabled={state.loading}
+            disabled={isBusy(state)}
             onClick={() => {
               invoke("refresh");
               checkCatalog(true);
@@ -393,7 +395,7 @@ export default function App() {
             <button
               className="pixel icon-button"
               aria-label="Actualizar catálogo"
-              disabled={state.loading}
+              disabled={isBusy(state)}
               onClick={() => checkCatalog(true)}
             >
               <RefreshCw />
@@ -428,14 +430,12 @@ export default function App() {
                     <button
                       className="pixel blue"
                       disabled={
-                        state.loading ||
+                        isBusy(state) ||
                         item.installed ||
-                        (item.downloadUrl || item.source === "BMI"
-                          ? !state.connected
-                          : !item.homepage)
+                        (canInstall(item) ? !state.connected : !item.homepage)
                       }
                       onClick={() =>
-                        item.downloadUrl || item.source === "BMI"
+                        canInstall(item)
                           ? setDialog({ type: "install", item })
                           : invoke("openCatalogSource", {
                               id: item.id,
@@ -445,7 +445,7 @@ export default function App() {
                     >
                       {item.installed
                         ? "Instalado"
-                        : item.downloadUrl || item.source === "BMI"
+                        : canInstall(item)
                           ? "Instalar"
                           : "Ver fuente"}
                     </button>
@@ -453,7 +453,7 @@ export default function App() {
                 </article>
               ))}
           </div>
-          {!catalog.length && !state.loading && (
+          {!catalog.length && !isBusy(state) && (
             <div className="pixel empty-state">
               <Search />
               <h2>El catálogo no está disponible</h2>
@@ -477,7 +477,7 @@ export default function App() {
           </button>
         ))}
       </nav>
-      {state.loading && (
+      {isBusy(state) && (
         <div className="activity-status" role="status">
           <LoaderCircle className="spin" /> Procesando…
         </div>
@@ -781,18 +781,45 @@ function Appearance({ value, onChange, onError, onClose }) {
   );
 }
 function ModSheet({ dialog, state, onClose }) {
-  const { mod, item, type } = dialog;
-  const act = (method) => {
-    invoke(method, { id: item.id, source: item.source });
+  const { mod, type } = dialog;
+  const item =
+    state.catalog?.find(
+      (candidate) =>
+        candidate.id === dialog.item?.id &&
+        candidate.source === dialog.item?.source,
+    ) || dialog.item;
+  const [selected, setSelected] = useState("");
+  const versions = item?.versions?.length
+    ? item.versions
+    : item
+      ? [
+          {
+            version: item.latestVersion || item.version,
+            downloadUrl: item.downloadUrl,
+          },
+        ]
+      : [];
+  const current = item?.installedVersion || mod?.version;
+  const chosen =
+    versions.find((version) => version.version === selected) || versions[0];
+  const act = (method, release) => {
+    invoke(method, {
+      id: item.id,
+      source: item.source,
+      ...(release
+        ? { version: release.version, downloadUrl: release.downloadUrl || "" }
+        : {}),
+    });
     onClose();
   };
+  const blocked = !state.connected || isBusy(state);
   if (type === "install" || type === "update")
     return (
       <div className="mod-sheet-content">
         <h3>{item.name}</h3>
         <p>
           {type === "update"
-            ? `${mod.version} → ${item.version}`
+            ? `${current} → ${item.latestVersion || item.version}`
             : `Versión ${item.version}`}
         </p>
         <p>
@@ -801,7 +828,7 @@ function ModSheet({ dialog, state, onClose }) {
         </p>
         <button
           className="pixel green done-button"
-          disabled={!state.connected || state.loading}
+          disabled={blocked}
           onClick={() =>
             act(type === "update" ? "updateCatalogMod" : "installCatalogMod")
           }
@@ -817,30 +844,69 @@ function ModSheet({ dialog, state, onClose }) {
         <div className="pixel version-row">
           <Check />
           <span>
-            {mod.version}
+            {current || "Sin versión"}
             <small>Instalada actualmente</small>
           </span>
         </div>
-        {item && item.version !== mod.version && (
+        {item && versions.length > 0 && (
+          <>
+            <label className="release-picker">
+              Versión disponible
+              <select
+                aria-label={`Versión de ${mod.name}`}
+                value={chosen?.version || ""}
+                disabled={isBusy(state)}
+                onChange={(event) => setSelected(event.target.value)}
+              >
+                {versions.map((release) => (
+                  <option key={release.version} value={release.version}>
+                    {release.version}
+                    {release.version === current ? " · instalada" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="pixel green"
+              disabled={
+                blocked ||
+                !chosen ||
+                chosen.version === current ||
+                !canInstall({
+                  ...item,
+                  downloadUrl: chosen?.downloadUrl,
+                  versions: [],
+                })
+              }
+              onClick={() => act("updateCatalogMod", chosen)}
+            >
+              Instalar versión seleccionada
+            </button>
+          </>
+        )}
+        {item?.source === "BMI" && versions.length <= 1 && (
           <button
-            className="pixel version-row"
-            disabled={!state.connected || state.loading}
-            onClick={() => act("updateCatalogMod")}
+            className="pixel"
+            disabled={isBusy(state)}
+            onClick={() =>
+              invoke("loadCatalogVersions", {
+                id: item.id,
+                source: item.source,
+              })
+            }
           >
-            <RefreshCw />
-            <span>
-              {item.version}
-              <small>Instalar versión del catálogo</small>
-            </span>
+            Cargar versiones publicadas
           </button>
         )}
         <p>
-          La instalación de versiones anteriores y betas aún no está disponible
-          en este manager.
+          {item
+            ? "Puedes volver a una versión anterior o probar otra publicación cuando la fuente la incluya."
+            : "No se encontró una fuente única para este mod."}
         </p>
-        {item && (
+        {item?.updateState === "unknown" && <p>{item.updateReason}</p>}
+        {item?.homepage && (
           <button className="pixel" onClick={() => act("openCatalogSource")}>
-            Ver versiones en la fuente ↗
+            Ver fuente ↗
           </button>
         )}
         <button className="text-button" onClick={onClose}>
@@ -865,7 +931,7 @@ function ModSheet({ dialog, state, onClose }) {
       )}
       <button
         className="pixel danger-action"
-        disabled={state.loading || !state.connected}
+        disabled={blocked}
         onClick={() => {
           if (window.confirm(`¿Desinstalar ${mod.name}?`)) {
             invoke("deleteMod", { folder: mod.folder });

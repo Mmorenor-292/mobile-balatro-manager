@@ -6,11 +6,15 @@ Use the debug APK for testing. If Android reports a signature conflict, uninstal
 
 ## Mods are not visible
 
-Open **Mods**, choose **Connect folder**, and approve `ASET/Mods` or the `Mods` directory. If access expired, connect it again. Imported packages remain hidden in quarantine until enabled.
+Open **Mods**, choose **Connect folder**, and approve `ASET/Mods` or the `Mods` directory. If access expired, connect it again. Imported packages are inspected first, then installed directly and enabled.
 
 ## The game stopped opening
 
-Use **Backup History → Restore**, disable the last installed mod, or restore a quarantined mod from **Installation History**. Framework folders such as Lovely and Steamodded are protected.
+Disable the last installed mod or restore a save/configuration backup. Mod deletion is permanent; framework folders such as Lovely and Steamodded remain protected.
+
+## IMM crashes with `Illegal version 1.0.1o-FULL (STM)`
+
+IMM 2.5.1 uses a strict parser that rejects the mobile build suffix. In **Mods**, open the options for `imm` and press **Fix IMM mobile version**, then restart Balatro. MBM changes only IMM's end-anchored version pattern and keeps the untouched source in app-private compatibility storage.
 
 ## Native says it cannot be patched
 

@@ -38,7 +38,7 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 - Home with Steam and Native routes.
 - Native incompatibility preflight and guided Steam fallback.
 - Mods import ZIP/folder actions and exactly two History tabs.
-- Reversible quarantine delete/restore and persistent installation history.
+- Direct inspected installs, transactional in-place updates, permanent deletion, and persistent installation history.
 - Save source/target selection, bounded conflict preview, reversible import path and ZIP export path.
 - Settings wallpaper selector with local persistence.
 - Settings advanced mode, local-only crash-report opt-in (off by default), and bounded history retention selector.
@@ -54,3 +54,37 @@ Build: MBM - Mobile Balatro Manager 2.0.0 (`cl.mauricio.balatromods`)
 - Desktop mod transfer is explicit and LAN-only, but it imports into a user-selected writable Android `Mods` folder; it does not silently inject into an official Play Store private sandbox. Direct SAF import on a physical ARM64 phone remains open.
 - The public QA matrix does not include a commercial Play Store APK. It verifies the package IDs and read-only source handoff in code, plus the full separate-package builder with an authorized local APK. The generated native APK is personal-use output and is not redistributed as part of MBM.
 - The upstream Maker does not package Steamodded/Lovely/mod folders into the `.love` source. MBM detects and reports those folders and manages them after installation through the Mods route; compatibility still depends on the mod and the generated mobile environment.
+
+## Release verification — 2026-08-04
+
+- Source revision: `a88cf12` (`main`) plus this verification record.
+- Frontend: `npm ci`, `npm test -- --run` (8/8), `npm run lint`, and `npm run build` — passed.
+- Android: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` — passed with the canonical Android App Lab SDK.
+- Release APK: `cl.mauricio.balatromods`, version `2.0.0` (`versionCode 20`), signed with the existing BMM release certificate (SHA-256 `e4748c44c8fa257d605278446b449dbbb5fa498ba9b51d3e18ab591858d5d671`).
+
+## Version 2.0.1 verification — 2026-08-05
+
+- Frontend: `npm test -- --run` (9/9), `npm run lint`, and `npm run build` passed. Preview verified version selectors for single- and multi-release catalog entries, visible `Installing…`/`Updating…` feedback, automatic toast dismissal, the IMM repair action, and permanent-delete controls.
+- Android: `testDebugUnitTest` and `assembleDebug` passed; debug APK installed as `cl.mauricio.balatromods` version `2.0.1` (`versionCode 21`) on `BMM_Public_API36` / `emulator-5570` and cold-launched without a fatal exception or `BMM_WEB` error.
+- Functional SAF test: connected `/sdcard/Download/MBMTest/Mods`, installed Steamodded from Discover, updated it in place, installed BalatroAnalytics, then permanently deleted BalatroAnalytics. The deleted folder disappeared and no `.bmm-trash--*` or `.bmm-incoming--*` directory remained.
+- Update safety: the previous installed folder is copied only to app-private cache while replacement is in progress; failures restore that copy before the operation cache is removed.
+- IMM crash repair: unit tests cover the narrow, idempotent parser patch for mobile game version suffixes such as `1.0.1o-FULL (STM)`. The Library exposes it only on detected IMM installations.
+
+## Awesome Balatro follow-up — 2026-08-05
+
+- GitHub entries now prefer a published release ZIP and fall back to the repository's real branch archive (`https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip`). The archive remains bounded and inspected by `CatalogInstaller` before any files reach the Mods folder.
+- UI regression: the Awesome Balatro GitHub fixture is installable and the mock Install action updates its catalog state; 9/9 web tests passed.
+- Android release rebuilt, installed incrementally on `emulator-5554`, and cold-launched without fatal manager markers.
+- Updated APK SHA-256: `3883D77582F2CB7D1936D20E2F397161BBB769DEC39E2E99E2371533CE7CBCE1`.
+- Embedded web assets include the compact mod-card rules (`min-height: 4.55rem`) and current wallpaper assets.
+- Android smoke: `adb install -r -d` and cold launch passed on `emulator-5554`; no fatal exception was found in the collected logcat.
+- Release artifact SHA-256: `A65CD100796FBD7FDA0F05FF12081CB30A6DEDB7174DAFF4150E2EE336A25769`.
+
+## Release verification — 2026-08-05
+
+- Frontend: `npm test -- --run` (9/9), `npm run lint`, and `npm run build` — passed.
+- Catalog behavior: Discover refreshes trusted indexes on entry; cards show installed/latest versions, expose verified release choices where the source provides them, and route Install/Update through the selected archive URL. GitHub entries from Awesome Balatro prefer a release asset and fall back to the repository source archive; only non-downloadable external links remain source-only.
+- Android behavior: mod enable/disable and other file operations are queued on the I/O executor without a blocking full-screen loading state; the catalog refresh still reports a compact non-blocking status chip.
+- Android: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` — passed with the canonical Android App Lab toolchain.
+- Android smoke: release APK installed incrementally on `emulator-5554`, cold launch passed, screenshot captured, and collected logcat contained no fatal manager exception.
+- Release APK: `cl.mauricio.balatromods`, version `2.0.0` (`versionCode 20`), signed with the existing BMM release certificate (SHA-256 `e4748c44c8fa257d605278446b449dbbb5fa498ba9b51d3e18ab591858d5d671`).

@@ -1,5 +1,25 @@
 # Public vNext changelog
 
+## 2.0.4 · 2026-08-06
+
+- Separated semantic releases from moving Balatro Mod Index source hashes, so an
+  uncomparable hash is never presented as a confirmed update.
+- Added on-demand GitHub release history with a quota-free official Atom-feed fallback;
+  uploaded mod packages are preferred over bundled Steamodded archives.
+- Added **Save diagnostic ZIP** and **Share via Telegram** with bounded inventory,
+  catalog/receipt state, useful text files, secret redaction, and explicit APK/save exclusion.
+- Added **Switch version** for intentional upgrades or downgrades that are not newer than
+  the installed build, instead of misleadingly labelling every different version as Update.
+
+## 2.0.1 · 2026-08-05
+
+- Added per-card `Installing…` / `Updating…` feedback without a blocking overlay.
+- Made version selection available in Discover and Library, including current/latest labels, upgrades, downgrades and reinstalls.
+- Fixed installed-mod matching so catalog updates no longer require delete/reinstall.
+- Replaced quarantine-based install/delete with inspected direct install, transactional update rollback in private cache, and permanent deletion.
+- Added a bounded, idempotent IMM mobile-version parser fix for `1.0.1o-FULL (STM)`.
+- Expanded Awesome Balatro release history from GitHub and consumes BMI version arrays when provided.
+
 ## 2.0.0 · 2026-08-02
 
 - Added a four-step Steam port wizard with local helper pairing, manual `.love`/

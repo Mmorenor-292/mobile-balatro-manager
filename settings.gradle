@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "BalatroModDeck"
 include(":app")
+include(":assistant")

@@ -6,7 +6,7 @@ This is the only route that validates the complete workflow with your real Balat
 installation and mods.
 
 1. On the notebook, wait for Google Drive Desktop to sync the release folder, or open
-   Google Drive in the browser and download `Balatro-Mobile-Mod-Manager-v2.0.0-release.apk`.
+   Google Drive in the browser and download `Balatro-Mobile-Mod-Manager-v2.0.1-release.apk`.
 2. Transfer the APK to the phone with Drive, USB, Nearby Share, or Telegram.
 3. On Android, open the APK from Drive or Files.
 4. If prompted, allow that app to **Install unknown apps**, then install.
@@ -23,7 +23,7 @@ and mod files are separate, but this removes the manager's own saved snapshots.
 Use an API 35 or newer x86_64 virtual device. From PowerShell:
 
 ```powershell
-adb install -r "C:\path\to\Balatro-Mobile-Mod-Manager-v2.0.0-release.apk"
+adb install -r "C:\path\to\Balatro-Mobile-Mod-Manager-v2.0.1-release.apk"
 adb shell am start -n cl.mauricio.balatromods/.MainActivity
 ```
 

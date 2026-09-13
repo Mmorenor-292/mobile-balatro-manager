@@ -2,13 +2,16 @@ const mockState = {
   connected: true,
   providerDetected: true,
   loading: false,
+  operation: { active: false, kind: "", itemId: "", source: "", label: "" },
   folder: "ASET/Mods",
   gameFile: "Balatro.exe · Steam library detected",
   nativeCompatibility: "unsupported",
-  version: "2.0.0",
+  version: "2.0.4",
   channel: "beta",
   canUndo: true,
   counts: { active: 12, hidden: 6, problems: 2 },
+  junkCount: 3,
+  updatesAvailable: 1,
   mods: [
     { folder: "smods-1.0.0", name: "Steamodded", version: "1.0.0", hidden: false, severity: "ok", diagnostics: ["Required framework"], dependencies: [] },
     { folder: "HandyBalatro", name: "Handy", version: "1.5.2", hidden: false, severity: "info", diagnostics: ["Depends on Steamodded"], dependencies: ["Steamodded"] },
@@ -16,6 +19,7 @@ const mockState = {
     { folder: "BetterDescriptions", name: "Better Descriptions", version: "1.1.0", hidden: true, severity: "ok", diagnostics: ["Hidden"], dependencies: [] },
     { folder: "CustomJokersPack", name: "Custom Jokers Pack", version: "2.3.0", hidden: false, severity: "error", diagnostics: ["Missing dependency: LovelyUI"], dependencies: ["LovelyUI"] },
     { folder: "VisualOverhaul", name: "Visual Overhaul", version: "1.0.4", hidden: false, severity: "warning", diagnostics: ["Corrupted metadata"], dependencies: [] },
+    { id: "balatro_imm", folder: "imm", name: "imm", version: "2.5.1", hidden: false, severity: "ok", diagnostics: ["No issues detected"], dependencies: ["Steamodded"] },
   ],
   recovery: {
     active: false,
@@ -55,6 +59,13 @@ const mockState = {
       name: "Handy",
       author: "SleepyG11",
       version: "1.5.2",
+      installedVersion: "1.5.2",
+      latestVersion: "1.6.0",
+      updateAvailable: true,
+      versions: [
+        { version: "1.6.0", downloadUrl: "https://example.invalid/handy-1.6.0.zip" },
+        { version: "1.5.2", downloadUrl: "https://example.invalid/handy-1.5.2.zip" },
+      ],
       summary: "A collection of useful gameplay shortcuts and controls.",
       categories: ["Quality of Life"],
       downloads: 68220,
@@ -76,12 +87,14 @@ const mockState = {
       requiresSteamodded: true,
     },
     {
-      id: "awesome:jie65535/awesome-balatro",
+      id: "awesome:Firch/Bunco",
       source: "Awesome Balatro",
-      name: "Awesome Balatro directory",
-      author: "jie65535",
+      name: "Bunco",
+      author: "Firch",
       version: "main",
-      summary: "Human-curated links to Balatro mods and tools. Entries are installable only when a verified release archive is available.",
+      summary: "A real GitHub repository from the Awesome Balatro collection. MBM can install its release or source archive.",
+      downloadUrl: "https://github.com/Firch/Bunco/archive/refs/heads/main.zip",
+      versions: [{ version: "main", downloadUrl: "https://github.com/Firch/Bunco/archive/refs/heads/main.zip" }],
       categories: ["Community"],
       downloads: 0,
       installed: false,
@@ -193,20 +206,50 @@ export function invoke(method, payload = {}) {
     const item = { id: `snapshot-${Date.now()}`, label: "Manual backup", createdAt: "Just now", entries: `${state.mods.length} mods · reversible` };
     emitMock({ canUndo: true, backupHistory: [item, ...(state.backupHistory || [])], history: [item, ...(state.history || [])], message: "Backup saved" });
   } else if (method === "deleteMod") {
-    emitMock({ message: "Mod moved to quarantine. Undo is available." });
+    const mods = state.mods.filter((mod) => mod.folder !== payload.folder);
+    const active = mods.filter((mod) => !mod.hidden).length;
+    emitMock({ mods, counts: { ...state.counts, active, hidden: mods.length - active }, message: "Mod was permanently deleted." });
   } else if (method === "deleteMods") {
-    emitMock({ message: "Selected mods moved to reversible quarantine. Undo is available." });
+    const folders = new Set(payload.folders || []);
+    const mods = state.mods.filter((mod) => !folders.has(mod.folder));
+    const active = mods.filter((mod) => !mod.hidden).length;
+    emitMock({ mods, counts: { ...state.counts, active, hidden: mods.length - active }, message: "Selected mods were permanently deleted." });
   } else if (method === "importMod") {
     emitMock({ message: "Choose a ZIP or folder from device storage." });
   } else if (method === "importModFolder") {
     emitMock({ message: "Choose a mod folder from device storage." });
+  } else if (method === "loadCatalogVersions") {
+    const catalog = state.catalog.map((item) => item.id === payload.id && item.source === payload.source
+      ? {
+          ...item,
+          version: "1.9.0",
+          latestVersion: "1.9.0",
+          versionKind: "release",
+          versions: [
+            { version: "1.9.0", downloadUrl: "https://example.invalid/mod-1.9.0.zip" },
+            { version: "1.8.4", downloadUrl: "https://example.invalid/mod-1.8.4.zip" },
+          ],
+        }
+      : item);
+    emitMock({ catalog, message: "2 published versions loaded." });
+  } else if (method === "saveDiagnosticZip") {
+    emitMock({ message: "Diagnostic ZIP ready. Choose where to save it." });
+  } else if (method === "shareDiagnosticZip") {
+    emitMock({ message: "Diagnostic ZIP ready to share." });
+  } else if (method === "cleanAllJunk") {
+    emitMock({ operation: { active: true, kind: "cleanup", itemId: "all", source: "local", label: "Cleaning known junk…" }, message: "Cleaning known junk…" });
+    setTimeout(() => emitMock({ junkCount: 0, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: "3 junk items were permanently removed. Mods and backups were left untouched." }), 450);
+  } else if (method === "updateAllMods") {
+    emitMock({ operation: { active: true, kind: "update-all", itemId: "Handy", source: "Thunderstore", label: "Updating 1 of 1: Handy…" }, message: "Preparing all updates…" });
+    setTimeout(() => {
+      const catalog = state.catalog.map((item) => item.updateAvailable ? { ...item, installedVersion: item.latestVersion || item.version, updateAvailable: false } : item);
+      emitMock({ catalog, updatesAvailable: 0, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: "1 mod was updated successfully." });
+    }, 550);
   } else if (method === "chooseSaveFolder") {
     emitMock({ saveFolder: "Connected save folder", saveFileCount: 2, saveProfiles: ["Root folder", "Profile 1"], message: "Save folder connected" });
   } else if (method === "chooseSaveTarget") {
     emitMock({ saveTargetFolder: "Connected target folder", message: "Save target connected" });
-  } else if (method === "restoreInstall") {
-    emitMock({ message: "Mod restored from quarantine" });
-  } else if (["pairDesktop", "selectSteamGame", "detectNative", "selectNativeApk", "buildSteam", "buildNative", "shareArtifact", "installArtifact", "previewSave", "importSave", "importDesktopSave", "exportSave", "exportHistory", "viewInstall", "chooseCatalogVersion", "updateCatalogMod", "resetSettings", "setHistoryRetention", "deleteHistoryEntry"].includes(method)) {
+  } else if (["pairDesktop", "selectSteamGame", "detectNative", "selectNativeApk", "buildSteam", "buildNative", "shareArtifact", "installArtifact", "previewSave", "importSave", "importDesktopSave", "exportSave", "exportHistory", "viewInstall", "repairImmVersion", "resetSettings", "setHistoryRetention", "deleteHistoryEntry"].includes(method)) {
     const messages = {
       pairDesktop: "Desktop paired on local network",
       selectSteamGame: "Game file selected",
@@ -222,8 +265,7 @@ export function invoke(method, payload = {}) {
       exportSave: "Local save backup exported",
       exportHistory: "History export created",
       viewInstall: "Installation details opened",
-      chooseCatalogVersion: "Version picker opened",
-      updateCatalogMod: "Update queued in quarantine",
+      repairImmVersion: "IMM fixed for Balatro mobile version strings. Restart Balatro before opening IMM.",
       resetSettings: "Preferences reset",
       setHistoryRetention: "History retention updated",
       deleteHistoryEntry: "History entry removed",
@@ -233,16 +275,17 @@ export function invoke(method, payload = {}) {
     emitMock({ message: "Snapshot restored" });
   } else if (method === "loadCatalog") {
     emitMock({ message: "Catalog updated" });
-  } else if (method === "installCatalogMod") {
-    const catalog = state.catalog.map((item) =>
-      item.id === payload.id && item.source === payload.source
-        ? { ...item, installed: true }
-        : item,
-    );
+  } else if (method === "installCatalogMod" || method === "updateCatalogMod") {
+    const kind = method === "updateCatalogMod" ? "update" : "install";
     emitMock({
-      catalog,
-      message: "Mod installed in quarantine. Review it in Library, then enable it.",
+      operation: { active: true, kind, itemId: payload.id, source: payload.source, label: kind === "update" ? "Updating mod…" : "Installing mod…" },
+      message: kind === "update" ? "Updating mod…" : "Installing mod…",
     });
+    setTimeout(() => {
+      const installedVersion = payload.version || state.catalog.find((item) => item.id === payload.id && item.source === payload.source)?.latestVersion || "latest";
+      const catalog = state.catalog.map((item) => item.id === payload.id && item.source === payload.source ? { ...item, installed: true, installedVersion, updateAvailable: false } : item);
+      emitMock({ catalog, operation: { active: false, kind: "", itemId: "", source: "", label: "" }, message: kind === "update" ? `Mod updated to ${installedVersion} and enabled.` : `Mod installed at ${installedVersion} and enabled.` });
+    }, 500);
   }
 }
 

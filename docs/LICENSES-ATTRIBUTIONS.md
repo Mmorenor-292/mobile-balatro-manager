@@ -1,6 +1,5 @@
 # Licenses and attributions
 
-- MBM - Mobile Balatro Manager application code: project-owned prototype by Mauricio Moreno / Codex; no third-party game files included.
 - React, Vite, Tailwind CSS and Lucide React: use the license texts shipped by their respective npm packages in the source lockfile and package metadata.
 - AndroidX DocumentFile and WebKit: Apache License 2.0, obtained through the Android build dependencies.
 - Android SDK, Platform Tools, Emulator, scrcpy and Maestro are test/build tools, not bundled into the consumer APK. Their official distribution licenses remain with their respective projects.

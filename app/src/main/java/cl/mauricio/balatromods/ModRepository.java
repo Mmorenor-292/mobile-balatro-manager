@@ -43,6 +43,7 @@ public final class ModRepository {
 
         List<ModEntry> mods = new ArrayList<>();
         List<String> scanErrors = new ArrayList<>();
+        List<String> junkNames = new ArrayList<>();
         DocumentFile[] children = safeListFiles(modsFolder);
         Arrays.sort(children, Comparator.comparing(
                 file -> safe(file.getName()).toLowerCase(Locale.ROOT)
@@ -53,7 +54,8 @@ public final class ModRepository {
                 continue;
             }
             String folderName = safe(child.getName());
-            if (folderName.startsWith(".bmm-trash--")) {
+            if (isKnownJunkName(folderName, true)) {
+                junkNames.add(folderName);
                 continue;
             }
             try {
@@ -81,14 +83,65 @@ public final class ModRepository {
             }
         }
 
+        for (DocumentFile child : children) {
+            if (!child.isFile()) continue;
+            String name = safe(child.getName());
+            if (isKnownJunkName(name, false)) junkNames.add(name);
+        }
+
         applyCrossModDiagnostics(mods);
         return new ScanResult(
                 safe(modsFolder.getName()),
                 modsFolder.getUri(),
                 modsFolder,
                 List.copyOf(mods),
-                List.copyOf(scanErrors)
+                List.copyOf(scanErrors),
+                List.copyOf(junkNames)
         );
+    }
+
+    /**
+     * Permanently removes only manager residues and OS metadata that are safe
+     * to classify without guessing. Real mod folders, disabled mods and user
+     * backups are never included.
+     */
+    public static CleanupReport cleanKnownJunk(DocumentFile modsFolder) throws Exception {
+        if (modsFolder == null || !modsFolder.exists() || !modsFolder.isDirectory()) {
+            throw new IllegalStateException("The Mods folder is no longer available.");
+        }
+        List<String> removed = new ArrayList<>();
+        List<String> failures = new ArrayList<>();
+        for (DocumentFile child : safeListFiles(modsFolder)) {
+            String name = safe(child.getName());
+            if (!isKnownJunkName(name, child.isDirectory())) continue;
+            try {
+                deleteDocumentTree(child);
+                removed.add(name);
+            } catch (Exception error) {
+                failures.add(name + ": " + readable(error));
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException("Some junk could not be removed: " + String.join("; ", failures));
+        }
+        return new CleanupReport(removed.size(), List.copyOf(removed));
+    }
+
+    static boolean isKnownJunkName(String rawName, boolean directory) {
+        String name = safe(rawName).toLowerCase(Locale.ROOT);
+        if (directory) {
+            return name.startsWith(".bmm-trash--")
+                    || name.startsWith(".bmm-incoming--")
+                    || name.startsWith(".bmm-staging--")
+                    || name.startsWith(".mbm-trash--")
+                    || name.startsWith(".mbm-incoming--")
+                    || name.equals("__macosx");
+        }
+        return name.equals(".ds_store")
+                || name.equals("thumbs.db")
+                || name.equals("desktop.ini")
+                || ((name.startsWith(".bmm-") || name.startsWith(".mbm-"))
+                    && (name.endsWith(".tmp") || name.endsWith(".part")));
     }
 
     private static ModEntry scanMod(Context context, DocumentFile child, String folderName)
@@ -113,10 +166,6 @@ public final class ModRepository {
             diagnostics.add("Empty mod folder");
             severity = "error";
         }
-        if (diagnostics.isEmpty()) {
-            diagnostics.add(marker != null && marker.exists() ? "Hidden" : "No issues detected");
-        }
-
         return new ModEntry(
                 parsed.id(),
                 parsed.name(),
@@ -165,27 +214,44 @@ public final class ModRepository {
 
     private static void applyCrossModDiagnostics(List<ModEntry> mods) {
         Map<String, Integer> ids = new HashMap<>();
-        Set<String> available = new HashSet<>();
+        Map<String, List<ModEntry>> available = new HashMap<>();
         for (ModEntry mod : mods) {
-            String id = normalizeId(mod.id);
+            String id = DependencySpec.canonicalId(mod.id);
             ids.put(id, ids.getOrDefault(id, 0) + 1);
-            available.add(id);
-            available.add(normalizeId(mod.name));
-            available.add(normalizeId(mod.folderName));
+            if (!id.isBlank()) available.computeIfAbsent(id, ignored -> new ArrayList<>()).add(mod);
+            if (id.isBlank()) {
+                addDependencyAlias(available, mod.name, mod);
+                addDependencyAlias(available, mod.folderName, mod);
+            }
         }
 
         for (int i = 0; i < mods.size(); i++) {
             ModEntry mod = mods.get(i);
             List<String> diagnostics = new ArrayList<>(mod.diagnostics);
             String severity = mod.severity;
-            if (ids.getOrDefault(normalizeId(mod.id), 0) > 1) {
+            if (ids.getOrDefault(DependencySpec.canonicalId(mod.id), 0) > 1) {
                 diagnostics.add("Duplicate mod ID: " + mod.id);
                 severity = worst(severity, "error");
             }
             for (String dependency : mod.dependencies) {
-                String normalized = normalizeId(dependency);
-                if (!normalized.isBlank() && !containsCompatible(available, normalized)) {
-                    diagnostics.add("Missing dependency: " + dependency);
+                DependencySpec spec = DependencySpec.parse(dependency);
+                List<ModEntry> candidates = available.getOrDefault(spec.id, List.of());
+                if (!spec.id.isBlank() && candidates.isEmpty()) {
+                    diagnostics.add("Missing dependency: " + spec.requirementLabel());
+                    severity = worst(severity, "error");
+                    continue;
+                }
+                if (!spec.version.isBlank() && candidates.stream().noneMatch(
+                        candidate -> spec.isSatisfiedBy(candidate.version)
+                )) {
+                    String installed = candidates.stream()
+                            .map(candidate -> candidate.version == null || candidate.version.isBlank()
+                                    ? "unknown" : candidate.version)
+                            .distinct()
+                            .reduce((left, right) -> left + ", " + right)
+                            .orElse("unknown");
+                    diagnostics.add("Dependency requires " + spec.requirementLabel()
+                            + "; installed " + installed);
                     severity = worst(severity, "error");
                 }
             }
@@ -195,16 +261,13 @@ public final class ModRepository {
         }
     }
 
-    private static boolean containsCompatible(Set<String> available, String dependency) {
-        if (available.contains(dependency)) {
-            return true;
-        }
-        for (String candidate : available) {
-            if (candidate.contains(dependency) || dependency.contains(candidate)) {
-                return true;
-            }
-        }
-        return false;
+    private static void addDependencyAlias(
+            Map<String, List<ModEntry>> available,
+            String value,
+            ModEntry mod
+    ) {
+        String alias = DependencySpec.canonicalId(value);
+        if (!alias.isBlank()) available.computeIfAbsent(alias, ignored -> new ArrayList<>()).add(mod);
     }
 
     private static ModEntry copyWithDiagnostics(
@@ -264,24 +327,28 @@ public final class ModRepository {
         }
     }
 
-    /**
-     * Reversible delete: rename the mod out of the live Mods namespace instead
-     * of deleting its files. The original name is kept in the quarantine name.
-     */
-    public static String quarantine(ModEntry mod) throws Exception {
-        if (mod.directory == null || !mod.directory.exists()) {
+    public static void deletePermanently(ModEntry mod) throws Exception {
+        if (mod == null || mod.directory == null || !mod.directory.exists()) {
             throw new IllegalStateException("The mod folder is no longer available.");
         }
         if (isEssential(mod)) {
             throw new IllegalStateException(
-                    "Steamodded/Lovely are protected. Disable them or confirm an explicit framework removal first."
+                    "Steamodded/Lovely are protected. Disable them instead of deleting the framework."
             );
         }
-        String safeName = ".bmm-trash--" + System.currentTimeMillis() + "--" + mod.folderName;
-        if (!mod.directory.renameTo(safeName)) {
-            throw new IllegalStateException("Android could not move this mod to reversible quarantine.");
+        deleteDocumentTree(mod.directory);
+    }
+
+    static void deleteDocumentTree(DocumentFile root) throws Exception {
+        if (root == null || !root.exists()) return;
+        if (root.isDirectory()) {
+            for (DocumentFile child : safeListFiles(root)) {
+                deleteDocumentTree(child);
+            }
         }
-        return safeName;
+        if (root.exists() && !root.delete()) {
+            throw new IllegalStateException("Android could not permanently delete " + safe(root.getName()) + ".");
+        }
     }
 
     public static void applyStates(
@@ -425,7 +492,11 @@ public final class ModRepository {
             Uri folderUri,
             DocumentFile folder,
             List<ModEntry> mods,
-            List<String> scanErrors
+            List<String> scanErrors,
+            List<String> junkNames
     ) {
+    }
+
+    public record CleanupReport(int removed, List<String> names) {
     }
 }

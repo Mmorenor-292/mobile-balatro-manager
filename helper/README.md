@@ -1,4 +1,4 @@
-# MBM Helper 0.4.0
+# MBM Helper 0.5.0
 
 Portable Windows helper for the public Steam route.
 
@@ -29,6 +29,12 @@ Portable Windows helper for the public Steam route.
   inspection before importing the folders into its selected Mods tree.
 - Does not upload game files, mods, saves, Steam credentials or Google credentials.
 - Does not scan the whole disk and does not execute Lua or mod code.
+- Pairs with the separate **Balatro AI Assistant** APK. Assistant jobs invoke the
+  locally installed Codex CLI using the desktop's existing ChatGPT/Codex sign-in,
+  `gpt-5.6-terra`, and high reasoning. OAuth credentials never enter the APK.
+- Copies selected logs and Mods ZIPs into isolated staging, blocks executable
+  payloads and path traversal, and exposes only a reviewable result or ZIP export.
+  It never applies an AI-generated repair to the original Mods folder automatically.
 
 ## Use
 
@@ -41,6 +47,11 @@ Portable Windows helper for the public Steam route.
 
 Open MBM on the phone, choose **Steam copy**, enter the helper address and the six-digit code shown by the helper.
 The phone and PC must be on the same local network. Stop the helper when finished.
+
+Open **Balatro AI Assistant** to use the same address and pairing code. Attach a
+crash log and, when needed, a ZIP copy of the affected mods. Choose a bounded task,
+review the diagnosis and proposed files, then export the ZIP for a separate import
+through MBM. Codex CLI must already be installed and signed in on the desktop.
 
 For the Play Store route, open **Native Android** after pairing. MBM detects the
 official package, uploads its base APK over the same local connection, and calls

@@ -21,6 +21,7 @@ internal static class Program
     private static string PairToken = "";
     private static readonly ConcurrentDictionary<string, BuildJob> BuildJobs = new();
     private static readonly ConcurrentDictionary<string, string> ManualSources = new();
+    private static readonly AssistantService Assistant = new();
 
     public static async Task<int> Main(string[] args)
     {
@@ -30,11 +31,11 @@ internal static class Program
         var nativeMaker = NativeBuilderLocator.Find();
         if (options.JsonOnly)
         {
-            Console.WriteLine(JsonSerializer.Serialize(new { helper = "BMM.Helper", version = "0.4.0", games = candidates, builderAvailable = maker != null, nativeBuilderAvailable = nativeMaker != null, saves = SaveScanner.Summary(), mods = SaveScanner.ModSummary() }, JsonOptions));
+            Console.WriteLine(JsonSerializer.Serialize(new { helper = "BMM.Helper", version = "0.5.0", games = candidates, builderAvailable = maker != null, nativeBuilderAvailable = nativeMaker != null, assistantAvailable = Assistant.CodexAvailable, assistantModel = "gpt-5.6-terra", assistantReasoning = "high", saves = SaveScanner.Summary(), mods = SaveScanner.ModSummary() }, JsonOptions));
             return 0;
         }
 
-        Console.WriteLine("BMM Helper 0.4.0 — LAN-only, allowlisted paths, no cloud upload");
+        Console.WriteLine("BMM Helper 0.5.0 — LAN-only, allowlisted paths, no cloud upload");
         Console.WriteLine($"Detected Balatro candidates: {candidates.Count}");
         foreach (var game in candidates)
         {
@@ -156,7 +157,7 @@ internal static class Program
                 var query = ParseQuery(uri.Query);
                 if (uri.AbsolutePath.Equals("/health", StringComparison.OrdinalIgnoreCase))
                 {
-                    await SendJson(stream, 200, new { ok = true, helper = "BMM.Helper", version = "0.4.0", lanOnly = true, builderAvailable = maker != null, nativeBuilderAvailable = nativeMaker != null });
+                    await SendJson(stream, 200, new { ok = true, helper = "BMM.Helper", version = "0.5.0", lanOnly = true, builderAvailable = maker != null, nativeBuilderAvailable = nativeMaker != null, assistantAvailable = Assistant.CodexAvailable });
                     return;
                 }
                 if (uri.AbsolutePath.Equals("/pair", StringComparison.OrdinalIgnoreCase))
@@ -180,6 +181,26 @@ internal static class Program
                     await UploadSource(stream, query, token, request.Headers, request.InitialBody);
                     return;
                 }
+                if (uri.AbsolutePath.Equals("/assistant-upload", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await SendJson(stream, 405, new { error = "POST required" });
+                        return;
+                    }
+                    await Assistant.UploadAsync(stream, query, token, request.Headers, request.InitialBody);
+                    return;
+                }
+                if (uri.AbsolutePath.Equals("/assistant-run", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await SendJson(stream, 405, new { error = "POST required" });
+                        return;
+                    }
+                    await Assistant.StartAsync(stream, query, token, request.Headers, request.InitialBody);
+                    return;
+                }
                 if (!string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase))
                 {
                     await SendJson(stream, 405, new { error = "GET only" });
@@ -188,7 +209,17 @@ internal static class Program
                 if (uri.AbsolutePath.Equals("/manifest", StringComparison.OrdinalIgnoreCase))
                 {
                     var manualReady = ManualSources.TryGetValue(token, out var manualPath) && File.Exists(manualPath);
-                    await SendJson(stream, 200, new { token, games, builderAvailable = maker != null, nativeBuilderAvailable = nativeMaker != null, manualUploadReady = manualReady, saves = SaveScanner.Summary(), mods = SaveScanner.ModSummary(), allowlist = games.Select(g => g.Root).ToArray(), next = nativeMaker != null ? "The personal Play Store builder is ready. MBM can upload an installed source APK and build a separate mod-capable copy." : maker == null ? "Install the Balatro Mobile Maker and restart the helper to enable local builds." : manualReady ? "Use /build?token=...&game=-1 to build the uploaded source." : "Use /build?token=...&game=0 after reviewing the detected copy, or upload a .love/.zip source." });
+                    await SendJson(stream, 200, new { token, games, builderAvailable = maker != null, nativeBuilderAvailable = nativeMaker != null, assistantAvailable = Assistant.CodexAvailable, assistantModel = "gpt-5.6-terra", assistantReasoning = "high", manualUploadReady = manualReady, saves = SaveScanner.Summary(), mods = SaveScanner.ModSummary(), allowlist = games.Select(g => g.Root).ToArray(), next = nativeMaker != null ? "The personal Play Store builder is ready. MBM can upload an installed source APK and build a separate mod-capable copy." : maker == null ? "Install the Balatro Mobile Maker and restart the helper to enable local builds." : manualReady ? "Use /build?token=...&game=-1 to build the uploaded source." : "Use /build?token=...&game=0 after reviewing the detected copy, or upload a .love/.zip source." });
+                    return;
+                }
+                if (uri.AbsolutePath.Equals("/assistant-status", StringComparison.OrdinalIgnoreCase))
+                {
+                    await Assistant.StatusAsync(stream, query);
+                    return;
+                }
+                if (uri.AbsolutePath.Equals("/assistant-artifact", StringComparison.OrdinalIgnoreCase))
+                {
+                    await Assistant.ArtifactAsync(stream, query);
                     return;
                 }
                 if (uri.AbsolutePath.Equals("/build", StringComparison.OrdinalIgnoreCase))
@@ -671,7 +702,7 @@ internal static class Program
             return normalizedChild.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static string StatusText(int status) => status switch { 200 => "OK", 202 => "Accepted", 400 => "Bad Request", 401 => "Unauthorized", 404 => "Not Found", 405 => "Method Not Allowed", 411 => "Length Required", 413 => "Payload Too Large", 415 => "Unsupported Media Type", _ => "Error" };
+        private static string StatusText(int status) => status switch { 200 => "OK", 202 => "Accepted", 400 => "Bad Request", 401 => "Unauthorized", 404 => "Not Found", 405 => "Method Not Allowed", 409 => "Conflict", 411 => "Length Required", 413 => "Payload Too Large", 415 => "Unsupported Media Type", _ => "Error" };
         public void Dispose() { stop = true; listener.Stop(); }
     }
 }

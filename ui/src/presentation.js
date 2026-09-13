@@ -17,6 +17,7 @@ export function catalogForMod(mod, catalog) {
   return byName.length === 1 ? byName[0] : null;
 }
 export function hasUpdate(mod, item) {
+  if (typeof item?.updateAvailable === "boolean") return item.updateAvailable;
   if (!item?.version || !mod.version) return false;
   const parse = (value) => /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(value).trim());
   const old = parse(mod.version),
@@ -66,4 +67,17 @@ export function saveAppearance(value) {
   } catch {
     return false;
   }
+}
+
+export function isBusy(state) {
+  return Boolean(
+    state.loading || state.operations?.length || state.operation?.active,
+  );
+}
+export function canInstall(item) {
+  return Boolean(
+    item.source === "BMI" ||
+    item.downloadUrl ||
+    item.versions?.some((version) => version.downloadUrl),
+  );
 }
