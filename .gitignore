@@ -45,3 +45,6 @@ signing.properties
 docs/BRAINSTORMING-Y-ARQUITECTURA.md
 docs/GOAL-PUBLIC-VNEXT.md
 docs/RESEARCH-SOURCES.md
+
+# Local UI inspection scripts and captures
+/output/playwright/

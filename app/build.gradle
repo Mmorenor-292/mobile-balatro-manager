@@ -4,6 +4,7 @@ plugins {
 
 def signingProperties = new Properties()
 def signingPropertiesPath = System.getenv("BALATRO_SIGNING_PROPERTIES")
+def qaApplicationIdSuffix = (findProperty("qaApplicationIdSuffix") ?: "").toString().trim()
 if (signingPropertiesPath != null && file(signingPropertiesPath).exists()) {
     file(signingPropertiesPath).withInputStream { signingProperties.load(it) }
 }
@@ -39,6 +40,11 @@ android {
 
     buildTypes {
         debug {
+            // Opt in with -PqaApplicationIdSuffix=.preview to install a QA
+            // build beside an existing package. Omitted means the normal ID.
+            if (!qaApplicationIdSuffix.isEmpty()) {
+                applicationIdSuffix qaApplicationIdSuffix
+            }
             buildConfigField "String", "BMM_CHANNEL", "\"beta\""
         }
         release {

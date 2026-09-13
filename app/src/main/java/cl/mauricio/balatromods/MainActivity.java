@@ -19,14 +19,18 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.DocumentsContract;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
+import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -77,6 +81,8 @@ public final class MainActivity extends Activity {
     private static final int PICK_STEAM_SOURCE_FILE = 1615;
     private static final int PICK_STEAM_SOURCE_FOLDER = 1616;
     private static final int PICK_SAVE_TARGET_TREE = 1617;
+    private static final int PICK_WEB_IMAGE = 1618;
+    private static final int SYSTEM_BAR_COLOR = Color.rgb(8, 26, 34); // #081a22
     private static final String PREFS = "balatro_mod_deck";
     private static final String PREF_TREE_URI = "mods_tree_uri";
     private static final String PREF_INSTALL_HISTORY = "install_history";
@@ -125,13 +131,23 @@ public final class MainActivity extends Activity {
     private Uri selectedSteamSourceUri;
     private String selectedSteamSourceName = "";
     private boolean steamSourceUploaded;
+    private ValueCallback<Uri[]> pendingWebFileChooser;
+    private boolean backDispatchInFlight;
+    private final OnBackInvokedCallback predictiveBackCallback = this::dispatchWebBack;
+    private boolean predictiveBackCallbackRegistered;
 
     @Override
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.rgb(4, 25, 29));
-        getWindow().setNavigationBarColor(Color.rgb(4, 25, 29));
+        registerPredictiveBackCallback();
+        getWindow().setStatusBarColor(SYSTEM_BAR_COLOR);
+        getWindow().setNavigationBarColor(SYSTEM_BAR_COLOR);
+        getWindow().getDecorView().setSystemUiVisibility(
+                getWindow().getDecorView().getSystemUiVisibility()
+                        & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                        & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        );
 
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         snapshots = new SnapshotStore(this);
@@ -155,13 +171,18 @@ public final class MainActivity extends Activity {
         // selector). Keep DOM storage enabled; all game/mod data remains in
         // the native bridge and never enters browser storage.
         settings.setDomStorageEnabled(true);
-        settings.setAllowContentAccess(false);
+        // File inputs receive a short-lived content:// grant from Android's
+        // document picker. FileReader needs content access to read that chosen
+        // image; LocalOnlyClient still blocks content:// navigation and no
+        // storage permission or persistent URI grant is requested.
+        settings.setAllowContentAccess(true);
         settings.setAllowFileAccess(false);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSafeBrowsingEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         webView.setBackgroundColor(Color.rgb(4, 25, 29));
         webView.addJavascriptInterface(new NativeBridge(), "AndroidBridge");
         WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
@@ -178,6 +199,16 @@ public final class MainActivity extends Activity {
                         + " @" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber());
                 return true;
             }
+
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view,
+                    ValueCallback<Uri[]> filePathCallback,
+                    FileChooserParams fileChooserParams
+            ) {
+                openWebImageChooser(filePathCallback);
+                return true;
+            }
         });
         setContentView(webView);
         webView.loadUrl(WEB_URL);
@@ -186,12 +217,84 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         pageReady = false;
+        completeWebFileChooser(null);
+        unregisterPredictiveBackCallback();
         io.shutdownNow();
         if (webView != null) {
             webView.removeJavascriptInterface("AndroidBridge");
             webView.destroy();
         }
         super.onDestroy();
+    }
+
+    /**
+     * Lets the bundled UI close its own overlays before the activity handles Back.
+     * The UI contract is: listen for the cancelable {@code androidback} event on
+     * {@code window} and call {@code event.preventDefault()} only when it consumed
+     * Back (for example, after closing a modal). No legacy WebView history is used.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        dispatchWebBack();
+    }
+
+    @SuppressLint("NewApi")
+    private void registerPredictiveBackCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                predictiveBackCallback
+        );
+        predictiveBackCallbackRegistered = true;
+    }
+
+    @SuppressLint("NewApi")
+    private void unregisterPredictiveBackCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || !predictiveBackCallbackRegistered) return;
+        getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(predictiveBackCallback);
+        predictiveBackCallbackRegistered = false;
+    }
+
+    /** Shared by legacy Back and Android 13+ predictive Back. */
+    @SuppressWarnings("deprecation")
+    private void dispatchWebBack() {
+        if (!pageReady || webView == null || backDispatchInFlight) {
+            if (!backDispatchInFlight) super.onBackPressed();
+            return;
+        }
+        backDispatchInFlight = true;
+        webView.evaluateJavascript(
+                "(function(){var event=new CustomEvent('androidback',{cancelable:true});"
+                        + "window.dispatchEvent(event);return event.defaultPrevented;})()",
+                result -> {
+                    backDispatchInFlight = false;
+                    if (!"true".equals(result) && !isFinishing() && !isDestroyed()) {
+                        super.onBackPressed();
+                    }
+                }
+        );
+    }
+
+    private void openWebImageChooser(ValueCallback<Uri[]> callback) {
+        completeWebFileChooser(null);
+        pendingWebFileChooser = callback;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, PICK_WEB_IMAGE);
+        } catch (ActivityNotFoundException error) {
+            completeWebFileChooser(null);
+        }
+    }
+
+    private void completeWebFileChooser(Uri[] selection) {
+        ValueCallback<Uri[]> callback = pendingWebFileChooser;
+        pendingWebFileChooser = null;
+        if (callback != null) callback.onReceiveValue(selection);
     }
 
     private void refresh(boolean withCatalog) {
@@ -1467,6 +1570,9 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == PICK_MODS_TREE) {
             handlePickedTree(resultCode, data);
+        } else if (requestCode == PICK_WEB_IMAGE) {
+            Uri image = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            completeWebFileChooser(image == null ? null : new Uri[]{image});
         } else if (requestCode == CREATE_REPORT) {
             handleReportDestination(resultCode, data);
         } else if (requestCode == PICK_IMPORT_FILE) {
@@ -2425,6 +2531,24 @@ public final class MainActivity extends Activity {
         });
     }
 
+    /**
+     * Opens only a homepage supplied by the currently loaded catalog item.
+     * The WebView may identify an item by id/source, but it cannot supply an
+     * arbitrary external URL through this endpoint.
+     */
+    private void openCatalogSource(String id, String source) {
+        try {
+            CatalogItem item = findCatalogItem(id, source);
+            if (item.homepage().isBlank()) {
+                throw new IllegalArgumentException("This catalog item has no repository or homepage URL.");
+            }
+            openModWebsite(item.homepage());
+        } catch (Exception error) {
+            message = readable(error);
+            pushState();
+        }
+    }
+
     private void runFileOperation(CheckedOperation operation) {
         if (loading) {
             return;
@@ -2747,6 +2871,10 @@ public final class MainActivity extends Activity {
                 case "resetSettings" -> resetSettings();
                 case "exportReport" -> exportReport();
                 case "openAwesomeBalatro" -> openAwesomeBalatro();
+                case "openCatalogSource" -> openCatalogSource(
+                        string(payload, "id"),
+                        string(payload, "source")
+                );
                 case "openModWebsite" -> openModWebsite(string(payload, "url"));
                 default -> {
                     message = "Unknown command: " + method;
