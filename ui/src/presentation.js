@@ -81,3 +81,50 @@ export function canInstall(item) {
     item.versions?.some((version) => version.downloadUrl),
   );
 }
+
+// A name is deliberately not an identity: several unrelated mods share short
+// names.  We only collapse entries when the catalog gives us the same source
+// id, or a canonical GitHub repository URL.
+const repositoryKey = (value) => {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.hostname.toLowerCase() !== "github.com") return "";
+    const [owner, repository] = url.pathname.split("/").filter(Boolean);
+    return owner && repository
+      ? `github:${owner.toLowerCase()}/${repository.toLowerCase().replace(/\.git$/, "")}`
+      : "";
+  } catch {
+    return "";
+  }
+};
+export function catalogIdentity(item) {
+  const repository = repositoryKey(
+    item.repository || item.homepage || item.downloadUrl,
+  );
+  const source = normalize(item.source), id = normalize(item.id);
+  return repository || (source && id ? `source:${source}:${id}` : "");
+}
+export function uniqueCatalog(items) {
+  const selected = new Map();
+  for (const [index, item] of (items || []).entries()) {
+    const key = catalogIdentity(item) || `unverified:${index}`;
+    const previous = selected.get(key);
+    if (
+      !previous ||
+      (!previous.installed && item.installed) ||
+      (!previous.installed &&
+        !item.installed &&
+        (!previous.summary || previous.summary.length < 12) &&
+        item.summary)
+    ) {
+      selected.set(key, item);
+    }
+  }
+  return [...selected.values()];
+}
+export function catalogRequirements(item) {
+  const requirements = [...(item?.dependencies || [])];
+  if (item?.requiresSteamodded) requirements.unshift("Steamodded");
+  if (item?.requiresTalisman) requirements.push("Talisman");
+  return [...new Set(requirements)];
+}

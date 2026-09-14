@@ -78,6 +78,10 @@ public final class CatalogInstaller {
                     folderName + " is already installed. Choose Update or another version instead."
             );
         }
+        // A disabled mod is represented by a root .lovelyignore marker. Keep that
+        // state across an update or downgrade; installing a different release must
+        // not silently enable code the user had explicitly disabled.
+        boolean preserveHiddenState = existing != null && hasRootIgnore(existing);
 
         File operationRoot = new File(
                 context.getCacheDir(),
@@ -113,8 +117,16 @@ public final class CatalogInstaller {
                 if (target == null) {
                     throw new IllegalStateException("Could not create " + folderName + " in Mods.");
                 }
+                if (!folderName.equals(target.getName())) {
+                    throw new IllegalStateException(
+                            "Android created a different mod folder; replacement was cancelled to avoid duplicates."
+                    );
+                }
                 copyDirectory(context, contentRoot, target);
                 removeRootIgnore(target);
+                if (preserveHiddenState) {
+                    addRootIgnore(context, target);
+                }
             } catch (Exception error) {
                 try {
                     if (target != null) {
@@ -237,6 +249,24 @@ public final class CatalogInstaller {
         DocumentFile marker = target.findFile(".lovelyignore");
         if (marker != null && marker.exists() && !marker.delete()) {
             throw new IllegalStateException("The installed mod could not be enabled.");
+        }
+    }
+
+    private static boolean hasRootIgnore(DocumentFile target) {
+        DocumentFile marker = target == null ? null : target.findFile(".lovelyignore");
+        return marker != null && marker.exists();
+    }
+
+    private static void addRootIgnore(Context context, DocumentFile target) throws Exception {
+        DocumentFile marker = target.createFile("application/octet-stream", ".lovelyignore");
+        if (marker == null) {
+            throw new IllegalStateException("The installed mod could not preserve its disabled state.");
+        }
+        try (OutputStream output = context.getContentResolver().openOutputStream(marker.getUri(), "wt")) {
+            if (output == null) {
+                throw new IllegalStateException("The provider denied writing .lovelyignore.");
+            }
+            output.write("Disabled by MBM - Mobile Balatro Manager\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
     }
 

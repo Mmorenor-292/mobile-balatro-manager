@@ -2,7 +2,7 @@ import { render, screen, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { catalogForMod, hasUpdate, readAppearance } from "./presentation";
+import { catalogForMod, hasUpdate, readAppearance, uniqueCatalog } from "./presentation";
 beforeEach(() => {
   delete window.AndroidBridge;
   localStorage.clear();
@@ -65,5 +65,32 @@ describe("Interfaz simplificada", () => {
     await user.click(screen.getByRole('button',{name:'Instalar versión seleccionada'}));
     expect(bridge).toHaveBeenCalledWith('updateCatalogMod',JSON.stringify({id:'Handy',source:'BMI',version:'1.5.1',downloadUrl:'https://example.invalid/old.zip'}));
     expect(hasUpdate({version:'1.0.0'},{version:'2.0.0',updateAvailable:false})).toBe(false);
-  });});
+  });
+  it("busca por autor y abre la ficha del catálogo", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(within(screen.getByRole("navigation")).getByRole("button", { name: "Descubrir" }));
+    await user.type(screen.getByRole("searchbox"), "nh6574");
+    expect(screen.getByRole("heading", { name: "Joker Display" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ver mod →" }));
+    expect(screen.getByRole("dialog", { name: "Ficha del mod" })).toBeInTheDocument();
+    expect(screen.getByText(/Compatibilidad móvil: sin verificar/)).toBeInTheDocument();
+  });
+  it("deduplica solo repositorios o identidades confirmadas", () => {
+    const entries = uniqueCatalog([
+      { id: "same", source: "A", name: "Una", homepage: "https://github.com/acme/mod" },
+      { id: "other", source: "B", name: "Otra", homepage: "https://github.com/acme/mod/releases" },
+      { id: "same-name", source: "C", name: "Una" },
+    ]);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.name)).toContain("Una");
+  });
+  it("conserva la entrada instalada al deduplicar un repositorio", () => {
+    const [entry] = uniqueCatalog([
+      { id: "one", source: "A", name: "Mod", installed: true, summary: "", homepage: "https://github.com/acme/mod" },
+      { id: "two", source: "B", name: "Mod", installed: false, summary: "Descripción más larga", homepage: "https://github.com/acme/mod/releases" },
+    ]);
+    expect(entry.installed).toBe(true);
+  });
+});
 

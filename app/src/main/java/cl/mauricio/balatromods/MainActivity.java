@@ -2399,6 +2399,9 @@ public final class MainActivity extends Activity {
                         "Updating " + (index + 1) + " of " + updates.size() + ": " + item.name() + "…"
                 );
                 try {
+                    if (installedCatalogMatchCount(item) > 1) {
+                        throw new IllegalStateException("multiple installed copies match this catalog entry; remove the duplicate before updating");
+                    }
                     ModEntry existing = findInstalledCatalogMod(item);
                     if (existing == null) throw new IllegalStateException("installed copy no longer matches");
                     List<String> missing = missingFrameworks(item);
@@ -2596,12 +2599,22 @@ public final class MainActivity extends Activity {
                                 + String.join(", ", missingFrameworks)
                 );
             }
-            ModEntry existing = null;
-            if (replaceExisting) {
-                existing = findInstalledCatalogMod(item);
-                if (existing == null) {
-                    throw new IllegalStateException("The installed copy could not be matched to this catalog entry. Refresh Library and try again.");
-                }
+            int existingMatches = installedCatalogMatchCount(item);
+            if (existingMatches > 1) {
+                throw new IllegalStateException(
+                        "Multiple installed copies match " + item.name()
+                                + ". Remove the duplicate before installing or updating it."
+                );
+            }
+            ModEntry existing = findInstalledCatalogMod(item);
+            if (replaceExisting && existing == null) {
+                throw new IllegalStateException("The installed copy could not be matched to this catalog entry. Refresh Library and try again.");
+            }
+            if (!replaceExisting && existing != null) {
+                throw new IllegalStateException(
+                        item.name() + " is already installed as " + existing.folderName
+                                + ". Choose Update to replace it without duplicates."
+                );
             }
             String selectedVersion = requestedVersion == null || requestedVersion.isBlank()
                     ? item.version()
@@ -2638,7 +2651,9 @@ public final class MainActivity extends Activity {
                     : " " + String.join(" ", result.warnings());
             return item.name()
                     + (replaceExisting ? " updated to " : " installed at ")
-                    + actualVersion + " and enabled."
+                    + actualVersion + (replaceExisting && existing.hidden
+                    ? " and remains disabled."
+                    : " and enabled.")
                     + (VersionOrder.isSourceRevision(selectedVersion)
                     ? " Source revision " + selectedVersion + "." : "")
                     + (immFixed ? " IMM mobile compatibility was repaired automatically." : "")
@@ -3401,20 +3416,23 @@ public final class MainActivity extends Activity {
 
     private ModEntry findInstalledCatalogMod(CatalogItem item) {
         if (scan == null || item == null) return null;
-        String itemId = ModRepository.normalizeId(item.id());
-        String itemName = ModRepository.normalizeId(item.name());
-        String itemFolder = ModRepository.normalizeId(item.folderName());
         for (ModEntry mod : scan.mods()) {
-            String modId = ModRepository.normalizeId(mod.id);
-            String modName = ModRepository.normalizeId(mod.name);
-            String modFolder = ModRepository.normalizeId(mod.folderName);
-            if (itemId.equals(modId) || itemId.equals(modName) || itemId.equals(modFolder)
-                    || itemName.equals(modId) || itemName.equals(modName) || itemName.equals(modFolder)
-                    || itemFolder.equals(modId) || itemFolder.equals(modName) || itemFolder.equals(modFolder)) {
+            if (CatalogIdentity.matches(item, mod)) {
                 return mod;
             }
         }
         return null;
+    }
+
+    private int installedCatalogMatchCount(CatalogItem item) {
+        if (scan == null || item == null) return 0;
+        int matches = 0;
+        for (ModEntry mod : scan.mods()) {
+            if (CatalogIdentity.matches(item, mod)) {
+                matches++;
+            }
+        }
+        return matches;
     }
 
     private void requireScan() {

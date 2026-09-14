@@ -586,7 +586,7 @@ button:active:not(:disabled) {
   box-shadow:
     inset 0 0 0 3px #07141c,
     inset 0 0 0 5px #3c5664;
-  padding: 13px 25px max(18px, env(safe-area-inset-bottom));
+  padding: 13px 25px max(48px, env(safe-area-inset-bottom));
   outline: none;
 }
 .sheet-handle {
@@ -831,6 +831,95 @@ button:active:not(:disabled) {
   color: var(--muted);
   font-size: 18px;
 }
+.catalog-category-row {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 10px 0 3px;
+  scrollbar-width: none;
+}
+.catalog-category-row::-webkit-scrollbar { display: none; }
+.catalog-category-row button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 7px 12px;
+  font-size: 16px;
+}
+.catalog-filters {
+  margin: 9px 0 4px;
+  padding: 0;
+  overflow: hidden;
+}
+.catalog-filters summary {
+  min-height: 44px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 18px;
+}
+.catalog-filters summary::-webkit-details-marker { display: none; }
+.catalog-filters > label,
+.catalog-filters > p {
+  margin: 0 12px 11px;
+}
+.catalog-filters > label:not(.catalog-check) {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 17px;
+}
+.catalog-filters select {
+  color: var(--cream);
+  background: #102a36;
+  border: 1px solid var(--line);
+  padding: 9px;
+}
+.catalog-check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 17px;
+}
+.catalog-filters p { color: var(--muted); font-size: 15px; line-height: 1.2; }
+.load-more {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 14px;
+  font-size: 19px;
+}
+.updates-summary {
+  min-height: 48px;
+  padding: 7px 9px 7px 13px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 17px;
+  color: #c7d9e0;
+}
+.updates-summary strong { color: #ffdb91; font-size: 22px; }
+.updates-summary button {
+  min-height: 35px;
+  padding: 5px 8px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 15px;
+}
+.updates-summary button svg { width: 16px; height: 16px; }
+.catalog-detail-content { gap: 13px; }
+.source-line { color: #b9d1df !important; }
+.requirement-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 13px;
+  background: #16303b;
+}
+.requirement-block span { color: #d9ecf2; }
+.requirement-block small, .compatibility-note, .requirement-note { color: var(--muted) !important; font-size: 17px; }
 .catalog-card {
   padding: 14px;
 }

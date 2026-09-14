@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,6 +30,8 @@ import {
   hasUpdate,
   readAppearance,
   saveAppearance,
+  catalogRequirements,
+  uniqueCatalog,
 } from "./presentation";
 const tabs = [
   ["home", "Home", House],
@@ -55,6 +58,10 @@ export default function App() {
   const [dialog, setDialog] = useState(null),
     [appearance, setAppearance] = useState(readAppearance),
     [notice, setNotice] = useState("");
+  const [catalogCategory, setCatalogCategory] = useState("all"),
+    [catalogSource, setCatalogSource] = useState("all"),
+    [hideInstalled, setHideInstalled] = useState(false),
+    [catalogLimit, setCatalogLimit] = useState(12);
   const catalogChecked = useRef(0),
     touchStart = useRef(null);
   useEffect(() => {
@@ -92,6 +99,7 @@ export default function App() {
     setFilter(nextFilter);
     setQuery("");
     if (next !== "home") checkCatalog();
+    if (next === "discover") setCatalogLimit(12);
   }
   function updateAppearance(next) {
     const merged = { ...appearance, ...next };
@@ -123,6 +131,27 @@ export default function App() {
       : appearance.background === "classic"
         ? classicBackground
         : "";
+  const catalogEntries = uniqueCatalog(catalog);
+  const catalogCategories = [
+    ...new Set(catalogEntries.flatMap((item) => item.categories || [])),
+  ].sort((a, b) => a.localeCompare(b, "es"));
+  const catalogSources = [
+    ...new Set(catalogEntries.map((item) => item.source).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b, "es"));
+  const visibleCatalog = catalogEntries
+    .filter((item) => {
+      const searchable = `${item.name || ""} ${item.author || ""}`
+        .toLocaleLowerCase("es")
+        .includes(normalized);
+      return (
+        searchable &&
+        (catalogCategory === "all" ||
+          item.categories?.includes(catalogCategory)) &&
+        (catalogSource === "all" || item.source === catalogSource) &&
+        (!hideInstalled || !item.installed)
+      );
+    })
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "es"));
   return (
     <main
       className={`app-shell ${appearance.crt ? "crt-enabled" : ""}`}
@@ -276,6 +305,23 @@ export default function App() {
               </button>
             ))}
           </div>
+          {filter === "updates" && (
+            <div className="pixel updates-summary">
+              <span>
+                <strong>{updates.length}</strong> {updates.length === 1 ? "actualización pendiente" : "actualizaciones pendientes"}
+              </span>
+              <button
+                className="pixel"
+                disabled={isBusy(state)}
+                onClick={() => {
+                  invoke("refresh");
+                  checkCatalog(true);
+                }}
+              >
+                <RefreshCw /> Buscar de nuevo
+              </button>
+            </div>
+          )}
           <div className="mod-list">
             {visibleMods.map((mod) => {
               const item = catalogForMod(mod, catalog);
@@ -388,10 +434,54 @@ export default function App() {
           <SearchField
             value={query}
             onChange={setQuery}
-            placeholder="Buscar mods…"
+            placeholder="Buscar por nombre o autor…"
           />
+          <div className="catalog-category-row" aria-label="Categorías">
+            {["all", ...catalogCategories.slice(0, 3)].map((category) => (
+              <button
+                key={category}
+                className={`pixel ${catalogCategory === category ? "selected blue" : ""}`}
+                aria-pressed={catalogCategory === category}
+                onClick={() => {
+                  setCatalogCategory(category);
+                  setCatalogLimit(12);
+                }}
+              >
+                {category === "all" ? "Todos" : category}
+              </button>
+            ))}
+          </div>
+          <details className="pixel catalog-filters">
+            <summary><SlidersHorizontal /> Filtrar catálogo</summary>
+            <label>
+              Fuente
+              <select
+                aria-label="Fuente del catálogo"
+                value={catalogSource}
+                onChange={(event) => {
+                  setCatalogSource(event.target.value);
+                  setCatalogLimit(12);
+                }}
+              >
+                <option value="all">Todas las fuentes</option>
+                {catalogSources.map((source) => <option key={source}>{source}</option>)}
+              </select>
+            </label>
+            <label className="catalog-check">
+              <input
+                type="checkbox"
+                checked={hideInstalled}
+                onChange={(event) => {
+                  setHideInstalled(event.target.checked);
+                  setCatalogLimit(12);
+                }}
+              />
+              Ocultar instalados
+            </label>
+            <p>Ordenado por nombre. Los repositorios repetidos se muestran una sola vez.</p>
+          </details>
           <div className="catalog-toolbar">
-            <span>{catalog.length} mods en el catálogo</span>
+            <span>{visibleCatalog.length} de {catalogEntries.length} mods</span>
             <button
               className="pixel icon-button"
               aria-label="Actualizar catálogo"
@@ -402,14 +492,8 @@ export default function App() {
             </button>
           </div>
           <div className="mod-list">
-            {catalog
-              .filter(
-                (item) =>
-                  !normalized ||
-                  `${item.name} ${item.author}`
-                    .toLocaleLowerCase("es")
-                    .includes(normalized),
-              )
+            {visibleCatalog
+              .slice(0, catalogLimit)
               .map((item) => (
                 <article
                   className="pixel catalog-card"
@@ -429,31 +513,33 @@ export default function App() {
                     <span>{item.version}</span>
                     <button
                       className="pixel blue"
-                      disabled={
-                        isBusy(state) ||
-                        item.installed ||
-                        (canInstall(item) ? !state.connected : !item.homepage)
-                      }
-                      onClick={() =>
-                        canInstall(item)
-                          ? setDialog({ type: "install", item })
-                          : invoke("openCatalogSource", {
-                              id: item.id,
-                              source: item.source,
-                            })
-                      }
+                      onClick={() => setDialog({ type: "catalog-detail", item })}
                     >
-                      {item.installed
-                        ? "Instalado"
-                        : canInstall(item)
-                          ? "Instalar"
-                          : "Ver fuente"}
+                      {item.installed ? "Instalado · Ver" : "Ver mod →"}
                     </button>
                   </div>
                 </article>
               ))}
           </div>
-          {!catalog.length && !isBusy(state) && (
+          {visibleCatalog.length > catalogLimit && (
+            <button
+              className="pixel load-more"
+              onClick={() => setCatalogLimit((value) => value + 12)}
+            >
+              Cargar más resultados
+            </button>
+          )}
+          {catalogEntries.length > 0 && !visibleCatalog.length && !isBusy(state) && (
+            <div className="pixel empty-state">
+              <Search />
+              <h2>Sin resultados</h2>
+              <p>Prueba otra búsqueda o limpia los filtros.</p>
+              <button className="pixel blue" onClick={() => {
+                setQuery(""); setCatalogCategory("all"); setCatalogSource("all"); setHideInstalled(false);
+              }}>Limpiar filtros</button>
+            </div>
+          )}
+          {!catalogEntries.length && !isBusy(state) && (
             <div className="pixel empty-state">
               <Search />
               <h2>El catálogo no está disponible</h2>
@@ -497,11 +583,13 @@ export default function App() {
               ? "Apariencia"
               : dialog.type === "version"
                 ? "Elegir versión"
-                : dialog.type === "install"
+              : dialog.type === "install"
                   ? "Instalar mod"
                   : dialog.type === "update"
                     ? "Actualizar mod"
-                    : dialog.mod.name
+                    : dialog.type === "catalog-detail"
+                      ? "Ficha del mod"
+                      : dialog.mod.name
           }
           onClose={() => setDialog(null)}
         >
@@ -780,6 +868,15 @@ function Appearance({ value, onChange, onError, onClose }) {
     </div>
   );
 }
+function RequirementBlock({ requirements }) {
+  if (!requirements.length) return <p className="requirement-note">Sin requisitos declarados por la fuente.</p>;
+  return (
+    <div className="pixel requirement-block">
+      <strong>Requiere</strong>
+      <span>{requirements.join(" · ")}</span>
+    </div>
+  );
+}
 function ModSheet({ dialog, state, onClose }) {
   const { mod, type } = dialog;
   const item =
@@ -813,6 +910,67 @@ function ModSheet({ dialog, state, onClose }) {
     onClose();
   };
   const blocked = !state.connected || isBusy(state);
+  const requirements = catalogRequirements(item);
+  const changes = item?.changes || item?.releaseNotes || item?.changelog;
+  if (type === "catalog-detail")
+    return (
+      <div className="mod-sheet-content catalog-detail-content">
+        <h3>{item.name}</h3>
+        <p className="source-line">{item.author || "Autor no indicado"} · {item.source}</p>
+        <p>{item.description || item.summary || "La fuente no incluyó una descripción."}</p>
+        <div className="pixel version-row">
+          <Check />
+          <span>
+            {chosen?.version || item.version || "Sin versión identificada"}
+            <small>{chosen?.prerelease ? "Preliminar" : "Publicación disponible"}</small>
+          </span>
+        </div>
+        {versions.length > 1 && (
+          <label className="release-picker">
+            Versión a instalar
+            <select
+              aria-label={`Versión de ${item.name}`}
+              value={chosen?.version || ""}
+              disabled={isBusy(state)}
+              onChange={(event) => setSelected(event.target.value)}
+            >
+              {versions.map((release) => (
+                <option key={release.version} value={release.version}>
+                  {release.version}{release.prerelease ? " · preliminar" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {item.source === "BMI" && versions.length <= 1 && (
+          <button
+            className="pixel"
+            disabled={isBusy(state)}
+            onClick={() => invoke("loadCatalogVersions", { id: item.id, source: item.source })}
+          >
+            Cargar versiones publicadas
+          </button>
+        )}
+        <RequirementBlock requirements={requirements} />
+        <p className="compatibility-note">
+          Compatibilidad móvil: {item.compatibility === "supported" ? "indicada por la fuente" : "sin verificar"}.
+        </p>
+        {changes && <p><strong>Novedades:</strong> {changes}</p>}
+        {item.homepage && (
+          <button className="pixel" onClick={() => invoke("openCatalogSource", { id: item.id, source: item.source })}>
+            Ver publicación original ↗
+          </button>
+        )}
+        <button
+          className="pixel green done-button"
+          disabled={item.installed || blocked || !chosen || !canInstall({ ...item, downloadUrl: chosen?.downloadUrl, versions: [] })}
+          onClick={() => act("installCatalogMod", chosen)}
+        >
+          {item.installed ? "Ya está instalado" : `Instalar ${chosen?.version || item.version || "mod"}`}
+        </button>
+        <p>Se añadirá a Mods. Revisa el resultado al terminar.</p>
+      </div>
+    );
   if (type === "install" || type === "update")
     return (
       <div className="mod-sheet-content">
@@ -826,6 +984,9 @@ function ModSheet({ dialog, state, onClose }) {
           La descarga se inspeccionará antes de instalarse. Revisa el estado del
           mod al terminar.
         </p>
+        {type === "update" && <RequirementBlock requirements={requirements} />}
+        {type === "update" && changes && <p><strong>Novedades:</strong> {changes}</p>}
+        {type === "update" && !changes && <p>La fuente no publicó un resumen de cambios para esta versión.</p>}
         <button
           className="pixel green done-button"
           disabled={blocked}
